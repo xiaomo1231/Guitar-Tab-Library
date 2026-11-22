@@ -25,3 +25,13 @@ export const PANEL = 'rounded-lg border border-border bg-card'
 /** A select in the songbook look: a hairline box, no shadow. */
 export const SELECT =
   'h-11 rounded-lg border border-border bg-transparent px-3 text-sm text-foreground focus:border-primary'
+
+/** A grouped list on a raised surface: rows divided by hairlines, rounded as one block. */
+export const LIST = 'overflow-hidden rounded-[14px] border border-border bg-card'
+
+/** One row of a LIST: at least 60 px tall, lit on hover. */
+export const LIST_ROW =
+  'flex min-h-[60px] items-center gap-3 border-t border-border px-3.5 py-2 transition-colors first:border-t-0 hover:bg-[hsl(var(--raised))]'
+
+/** A quiet section heading over a LIST. */
+export const SECTION_TITLE = 'm-0 text-[13px] font-bold tracking-[0.02em] text-muted-foreground'
