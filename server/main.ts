@@ -541,8 +541,22 @@ function checkPersonal(me: StoredUser, adding: number): void {
   }
 }
 
+/** Bytes of uploads that passed the space check and are being written (so two at once cannot both fit). */
+const reservedBytes = new Map<string, number>()
+async function withReserved<T>(bandId: string, bytes: number, job: () => Promise<T>): Promise<T> {
+  reservedBytes.set(bandId, (reservedBytes.get(bandId) ?? 0) + bytes)
+  try {
+    return await job()
+  } finally {
+    const left = (reservedBytes.get(bandId) ?? 0) - bytes
+    if (left > 0) reservedBytes.set(bandId, left)
+    else reservedBytes.delete(bandId)
+  }
+}
+
 /** Bytes a band keeps on this computer (uploaded scores and recordings). */
-const storageOf = (bandId: string): number => uploads.bytesOf(bandId) + recordings.bytesOf(bandId)
+const storageOf = (bandId: string): number =>
+  uploads.bytesOf(bandId) + recordings.bytesOf(bandId) + (reservedBytes.get(bandId) ?? 0)
 
 /** Refuses an upload that would pass the band's space limit. */
 function checkStorage(ctx: BandCtx, adding: number): void {
@@ -1191,12 +1205,8 @@ async function handleRecordings(
       }
       const bytes = await readRecordingBody(req, MAX_RECORDING_BYTES)
       checkStorage(ctx, bytes.length)
-      await recordings.add(
-        q.songId,
-        { label: q.label, fileName: q.name, bandId: ctx.id },
-        bytes,
-        me.id,
-        Date.now(),
+      await withReserved(ctx.id, bytes.length, () =>
+        recordings.add(q.songId, { label: q.label, fileName: q.name, bandId: ctx.id }, bytes, me.id, Date.now()),
       )
       log(`上传排练录音：${q.name || q.label}`)
       bandChanged(ctx.id)
