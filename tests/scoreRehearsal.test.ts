@@ -22,7 +22,8 @@ import {
   type Actor,
 } from '../server/rehearsal'
 
-const A: Actor = { userId: 'a', deviceId: 'dev-aaaaaaaa' }
+/** A is the band's leader (队长); B is a member. */
+const A: Actor = { userId: 'a', deviceId: 'dev-aaaaaaaa', manager: true }
 const B: Actor = { userId: 'b', deviceId: 'dev-bbbbbbbb' }
 const NOW = 1000
 const ctx = (now = NOW) => ({ now, songExists: (id: string) => ['s1', 's2', 's3'].includes(id) })
@@ -282,11 +283,44 @@ describe('applyRehearsal: lead and speaker', () => {
     })
   })
 
-  it('lets a speaker take the speaker role and pauses playback', () => {
-    const s = started({ playing: true, tick: 300 })
+  it('lets a member offer the speaker while there is none and nothing plays', () => {
+    const s = started({ tick: 300 })
     const took = unwrap(run(s, B, { type: 'speaker', take: true }))
     expect(took).toMatchObject({ speakerDevice: B.deviceId, playing: false, tick: 300 })
     expect(took.seq).toBe(s.seq + 1)
+  })
+
+  it('lets only the leader or the conductor take the speaker while it plays (and pauses)', () => {
+    const s = started({ playing: true, tick: 300 })
+    expect(errOf(s, B, { type: 'speaker', take: true }).status).toBe(403)
+    const took = unwrap(run(s, A, { type: 'speaker', take: true }))
+    expect(took).toMatchObject({ speakerDevice: A.deviceId, playing: false, tick: 300 })
+    // The conductor need not be the band's leader.
+    const led = { ...s, leaderId: 'b', leaderDevice: B.deviceId }
+    expect(unwrap(run(led, B, { type: 'speaker', take: true })).speakerDevice).toBe(B.deviceId)
+  })
+
+  it('keeps a speaker that is in the room from being replaced by a member', () => {
+    const s = started({ speakerDevice: A.deviceId })
+    expect(errOf(s, B, { type: 'speaker', take: true }).status).toBe(403)
+    // A speaker that left the room can be replaced by anyone.
+    const gone = started({ speakerDevice: 'dev-gone-0000', devices: [dev(A), dev(B)] })
+    expect(unwrap(run(gone, B, { type: 'speaker', take: true })).speakerDevice).toBe(B.deviceId)
+  })
+
+  it('gives no role to a device that is not in the room', () => {
+    const ghost: Actor = { userId: 'a', deviceId: 'dev-ghost-000', manager: true }
+    expect(errOf(room(), ghost, { type: 'start', setlist: ['s1'] }).status).toBe(409)
+    expect(errOf(started(), ghost, { type: 'speaker', take: true }).status).toBe(409)
+    const free = started({ leaderId: null, leaderDevice: null })
+    expect(errOf(free, ghost, { type: 'lead', take: true }).status).toBe(409)
+  })
+
+  it('lets only the band leader start the rehearsal', () => {
+    expect(errOf(room(), B, { type: 'start', setlist: ['s1'] })).toEqual({
+      error: '只有队长可以开始排练。',
+      status: 403,
+    })
   })
 
   it('releases the speaker only from the current speaker device', () => {
@@ -447,7 +481,7 @@ describe('applyRehearsal: passEnded', () => {
   })
 
   it('uses the speaker device as the reference once one is set', () => {
-    const taken = unwrap(run(looping(), B, { type: 'speaker', take: true }))
+    const taken = unwrap(run(looping(), { ...B, manager: true }, { type: 'speaker', take: true }))
     const s = unwrap(run(taken, A, { type: 'play', tick: 0, speedPct: 100 }))
     expect(errOf(s, A, { type: 'passEnded', seq: s.seq, pass: 1 }).status).toBe(403)
     expect(run(s, B, { type: 'passEnded', seq: s.seq, pass: 1 })).toMatchObject({
@@ -716,9 +750,10 @@ describe('RehearsalHub', () => {
     hub = new RehearsalHub()
     const b = fakeStream()
     hub.subscribe('b', B.deviceId, 'phone', b.req, b.res as never)
-    hub.command(B, { type: 'start', setlist: ['s1'] }, ctx())
+    hub.command({ ...B, manager: true }, { type: 'start', setlist: ['s1'] }, ctx())
     hub.command(B, { type: 'speaker', take: true }, ctx())
     hub.command(B, { type: 'play', tick: 0, speedPct: 100 }, ctx())
+    expect(hub.state()).toMatchObject({ speakerDevice: B.deviceId, playing: true })
     b.req.emit('close')
     vi.advanceTimersByTime(DEVICE_GRACE_MS)
     expect(hub.state()).toMatchObject({ speakerDevice: null, playing: false })
@@ -787,11 +822,26 @@ describe('RehearsalHub: accounts and devices', () => {
     expect('error' in r && r.status).toBe(403)
   })
 
+  it('dropping someone\'s streams keeps their devices for the grace period', () => {
+    vi.useFakeTimers()
+    hub = new RehearsalHub()
+    const a = fakeStream()
+    hub.subscribe('a', 'dev-aaaa-1234', 'iPad', a.req, a.res as never)
+    hub.dropStreams('a')
+    expect(a.res.ended).toBe(true)
+    expect(hub.state().devices.map((d) => d.deviceId)).toEqual(['dev-aaaa-1234'])
+    // The device that is still signed in reconnects and stays.
+    const again = fakeStream()
+    hub.subscribe('a', 'dev-aaaa-1234', 'iPad', again.req, again.res as never)
+    vi.advanceTimersByTime(DEVICE_GRACE_MS)
+    expect(hub.state().devices).toHaveLength(1)
+  })
+
   it('an account taken out of the band leaves at once, and an empty rehearsal ends', () => {
     hub = new RehearsalHub()
     const a = fakeStream()
     hub.subscribe('a', 'dev-aaaa-1234', 'iPad', a.req, a.res as never)
-    hub.command({ userId: 'a', deviceId: 'dev-aaaa-1234' }, { type: 'start', setlist: ['s1'] }, { now: 0, songExists: () => true })
+    hub.command({ userId: 'a', deviceId: 'dev-aaaa-1234', manager: true }, { type: 'start', setlist: ['s1'] }, { now: 0, songExists: () => true })
     expect(hub.state().active).toBe(true)
     hub.evictUser('a')
     expect(hub.state()).toMatchObject({ active: false, leaderId: null, devices: [] })

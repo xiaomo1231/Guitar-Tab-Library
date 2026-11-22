@@ -136,6 +136,35 @@ export function useRehearsalPlayer(opts: {
     a.masterVolume = here && !sounding ? 0 : 1
   }, [api, enabled, here, sounding, ready])
 
+  // The screen stays on while this device is in the rehearsal: a phone that locks itself
+  // loses its stream and, as the 音箱, would stop the music for everyone.
+  useEffect(() => {
+    if (!here) return
+    type Lock = { release(): Promise<void> }
+    const wl = (navigator as { wakeLock?: { request(type: 'screen'): Promise<Lock> } }).wakeLock
+    if (!wl) return
+    let lock: Lock | null = null
+    let gone = false
+    const acquire = () => {
+      if (gone || document.visibilityState !== 'visible') return
+      wl.request('screen').then(
+        (l) => {
+          if (gone) void l.release().catch(() => undefined)
+          else lock = l
+        },
+        () => undefined, // refused (low battery, no permission): the rehearsal still works
+      )
+    }
+    acquire()
+    // The browser drops the lock whenever the page is hidden; take it again on return.
+    document.addEventListener('visibilitychange', acquire)
+    return () => {
+      gone = true
+      document.removeEventListener('visibilitychange', acquire)
+      void lock?.release().catch(() => undefined)
+    }
+  }, [here])
+
   // --- applying the shared transport ----------------------------------------------------
   const stateRef = useRef<RehearsalState | null>(null)
   stateRef.current = here ? state : null
@@ -147,6 +176,24 @@ export function useRehearsalPlayer(opts: {
   const run = useRef<{ start: number; countIn: number } | null>(null)
   const [countIn, setCountIn] = useState<RehearsalPlayer['countIn']>(null)
   const sample = useRef<{ timeMs: number; at: number } | null>(null)
+
+  // Back from the background (the phone was unlocked, the tab returned): the browser may have
+  // stopped this player meanwhile. If the room plays and this player does not, the transport
+  // is applied again; a player that kept going is put in place by the next clock report.
+  const [resync, setResync] = useState(0)
+  useEffect(() => {
+    if (!here) return
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return
+      const s = stateRef.current
+      const a = api.current
+      if (!s || !a || !s.playing || a.playerState === 1 || startTimer.current) return
+      applied.current = null
+      setResync((n) => n + 1)
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [here, api])
 
   const clearStart = () => {
     if (startTimer.current) clearTimeout(startTimer.current)
@@ -240,7 +287,7 @@ export function useRehearsalPlayer(opts: {
       }, 300)
       run.current = { start: Date.now() - 10_000, countIn: 0 }
     }
-  }, [api, ready, here, state, conn.deviceId, countInOf, onSpeed])
+  }, [api, ready, here, state, conn.deviceId, countInOf, onSpeed, resync])
 
   useEffect(() => () => clearStart(), [])
 

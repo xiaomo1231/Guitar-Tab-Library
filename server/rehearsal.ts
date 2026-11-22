@@ -22,9 +22,12 @@ export const START_DELAY_MS = 1500
 /** Gap between the end of one loop pass and the start of the next. */
 export const PASS_GAP_MS = 1500
 /** How long a leader may be absent before the lead is released. */
-export const LEADER_GRACE_MS = 10000
-/** How long a device whose last stream closed is kept before it is removed. */
-export const DEVICE_GRACE_MS = 8000
+export const LEADER_GRACE_MS = 60000
+/**
+ * How long a device whose last stream closed is kept before it is removed. Long enough for a
+ * phone that locked its screen or went to the background for a moment to come back.
+ */
+export const DEVICE_GRACE_MS = 30000
 /** Comment ping interval that keeps proxies from closing idle streams. */
 export const HEARTBEAT_MS = 20000
 
@@ -258,6 +261,8 @@ export function freshRehearsal(): RehearsalState {
 export interface Actor {
   userId: string
   deviceId: string
+  /** The band's leader (队长) or an admin: may start the rehearsal and name the 音箱. */
+  manager?: boolean
 }
 
 export interface Ctx {
@@ -312,12 +317,18 @@ export function applyRehearsal(
     return err('这个设备不是你的。', 403)
   const leaderOnly = (): RehearsalResult | null =>
     isLeader ? null : err('只有指挥可以控制排练。', 403)
+  // A role is only given to a device that is in the room: nothing ever points at a device
+  // that is not there (it could not report the position, and the room would stay silent).
+  const inRoom = listedDevice !== undefined && listedDevice.userId === actor.userId
+  const notInRoom = (): RehearsalResult => err('这个设备还没连上排练，请刷新页面。', 409)
 
   if (!WITHOUT_ACTIVE.includes(cmd.type) && !state.active) return err('排练还没开始。', 409)
 
   switch (cmd.type) {
     case 'start': {
       if (state.active) return err('排练已经开始了。', 409)
+      if (!actor.manager) return err('只有队长可以开始排练。', 403)
+      if (!inRoom) return notInRoom()
       if (!cmd.setlist.every((id) => ctx.songExists(id)))
         return err('歌单里有歌已经不在乐队歌单里了。', 404)
       return done(
@@ -352,6 +363,7 @@ export function applyRehearsal(
       if (cmd.take) {
         const free = state.leaderId === null || isLeader || !leaderHasDevice(state.leaderId)
         if (!free) return err('指挥还在，暂时不能接管。', 409)
+        if (!inRoom) return notInRoom()
         return done({ ...state, leaderId: actor.userId, leaderDevice: actor.deviceId }, 'other')
       }
       if (!isLeader) return err('只有指挥可以放下指挥棒。', 403)
@@ -359,6 +371,16 @@ export function applyRehearsal(
     }
     case 'speaker': {
       if (cmd.take) {
+        // Anyone may offer a device as the 音箱 while there is none and nothing plays (the
+        // room's tablet is often signed in as a member); taking it from a 音箱 that is there,
+        // or stopping the music for it, is up to the leader (队长) or the conductor.
+        const present =
+          state.speakerDevice !== null &&
+          state.speakerDevice !== actor.deviceId &&
+          state.devices.some((d) => d.deviceId === state.speakerDevice)
+        if ((present || state.playing) && !isLeader && !actor.manager)
+          return err('只有队长或指挥可以在播放时或已有音箱时更换音箱。', 403)
+        if (!inRoom) return notInRoom()
         return done(bump({ speakerDevice: actor.deviceId, playing: false }), 'transport')
       }
       if (state.speakerDevice !== actor.deviceId) return err('只有当前音箱可以取消。', 403)
@@ -618,6 +640,14 @@ export class RehearsalHub {
       this.reconcileLeaderGrace()
       this.broadcast()
     }
+  }
+
+  /**
+   * Closes someone's streams without taking their devices out (a changed password signs the
+   * other devices out): a device still signed in reconnects within the grace period.
+   */
+  dropStreams(userId: string): void {
+    for (const conn of [...this.conns]) if (conn.userId === userId) this.disconnect(conn)
   }
 
   /** Ends every stream and clears all timers (shutdown / tests). */

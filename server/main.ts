@@ -184,6 +184,7 @@ import {
 const SESSION_COOKIE = 'gl_session'
 const SESSION_MAX_AGE = 30 * 24 * 60 * 60
 const LOGIN_MAX_FAILURES = 5
+const LOGIN_MAX_FAILURES_PER_ADDRESS = 30
 const LOGIN_WINDOW_MS = 10 * 60 * 1000
 const MAX_JSON_BODY = 4096
 const MAX_FAVORITE_BODY = 64 * 1024
@@ -304,6 +305,13 @@ let webDir: string
 let loaded: LoadedLibrary | null = null
 let scanning = false
 const limiter = createRateLimiter(LOGIN_MAX_FAILURES, LOGIN_WINDOW_MS)
+/**
+ * Wrong passwords are counted per address AND account, so that one member's typos do not
+ * lock everyone out when all requests arrive from one address (behind a reverse proxy).
+ * The address alone still has a (much higher) limit.
+ */
+const loginLimiter = createRateLimiter(LOGIN_MAX_FAILURES, LOGIN_WINDOW_MS)
+const loginAddressLimiter = createRateLimiter(LOGIN_MAX_FAILURES_PER_ADDRESS, LOGIN_WINDOW_MS)
 let inRoot: InRoot
 let users: UserStore
 let bands: BandRegistry
@@ -693,7 +701,11 @@ async function handleUsers(
     const info = await users.updateMe(me.id, body).catch(asHttp)
     // A new password signs out the other devices; this one gets a fresh session.
     const fresh = users.get(me.id)
-    if (fresh && body.newPassword) setSession(req, res, fresh)
+    if (fresh && body.newPassword) {
+      setSession(req, res, fresh)
+      // The signed-out devices lose their rehearsal streams too; this one reconnects.
+      for (const hub of hubs.values()) hub.dropStreams(me.id)
+    }
     return sendJson(res, 200, info)
   }
   requireAdmin(me)
@@ -1517,11 +1529,16 @@ async function handleRehearsal(
       : null
   // The room decides first (one of two simultaneous starts wins); the winner's setlist is
   // then saved as today's (it shows on the band page too).
-  const r = rehearsal.command({ userId: me.id, deviceId: body.deviceId }, cmd, cctx)
+  const r = rehearsal.command({ userId: me.id, deviceId: body.deviceId, manager: ctx.manager }, cmd, cctx)
   if ('error' in r) return sendJson(res, r.status, { error: r.error })
   if (startIds) {
-    await band.setSetlist(startIds).catch(asHttp)
-    bandChanged(ctx.id)
+    // The rehearsal is already on: a setlist that could not be saved does not undo it.
+    try {
+      await band.setSetlist(startIds)
+      bandChanged(ctx.id)
+    } catch (err) {
+      log(`排练已经开始，但今天的歌单没能保存：${errorText(err)}`)
+    }
   }
   if (cmd.type === 'start') log(`开始排练（${me.displayName}）`)
   if (cmd.type === 'end') log(`结束排练（${me.displayName}）`)
@@ -2201,16 +2218,21 @@ async function handleApi(
 
 async function handleLogin(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
   const ip = req.socket.remoteAddress ?? 'unknown'
-  if (limiter.isBlocked(ip)) return sendJson(res, 429, { error: '尝试次数太多，10 分钟后再试。' })
+  if (loginAddressLimiter.isBlocked(ip))
+    return sendJson(res, 429, { error: '尝试次数太多，10 分钟后再试。' })
   const body = orBadRequest(parseLogin(await readJsonBody(req)))
+  const key = `${ip}|${body.username.toLowerCase()}`
+  if (loginLimiter.isBlocked(key))
+    return sendJson(res, 429, { error: '尝试次数太多，10 分钟后再试。' })
   const u = await users.login(body.username, body.password)
   if (!u) {
-    limiter.recordFailure(ip)
+    loginLimiter.recordFailure(key)
+    loginAddressLimiter.recordFailure(ip)
     log(`登录失败（来自 ${ip}）。`)
     return sendJson(res, 401, { error: '用户名或密码不对。' })
   }
   if (u.disabled) return sendJson(res, 403, { error: '这个账号已经被管理员停用了。' })
-  limiter.clear(ip)
+  loginLimiter.clear(key)
   setSession(req, res, u)
   sendJson(res, 200, publicUser(u))
 }
@@ -2243,10 +2265,12 @@ async function handleFile(
     return sendJson(res, 405, { error: '不支持这种请求方式。' })
 
   const rel = decodeUrlPath(url.pathname.slice('/files/'.length))
-  const real = rel === null ? null : await resolveAnyFile(rel)
-  if (!real || rel === null) return sendJson(res, 404, { error: '找不到文件。' })
+  if (rel === null) return sendJson(res, 404, { error: '找不到文件。' })
   // Members without library access open only their bands' setlists; uploads only their bands'.
+  // Asked before the file is looked for, so the answer never tells them whether it exists.
   if (!canOpen(me, rel)) return sendJson(res, 403, { error: '你的账号只能查看乐队歌单里的谱子。' })
+  const real = await resolveAnyFile(rel)
+  if (!real) return sendJson(res, 404, { error: '找不到文件。' })
 
   const st = await statOr404(real)
   const size = st.size
