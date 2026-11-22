@@ -4,9 +4,8 @@ import type { ScoreFormat } from '@/songs/scoreLibraryTypes'
 import { errorText, fetchBytes, fileUrl, type Arrangement, type PracticeUpdate } from '../lib/api'
 import { configOf, mixOf, sameConfig } from '@/songs/arrangement'
 import { clampTranspose } from '../lib/transpose'
-import { cx } from '../lib/classes'
+import { buttonClass, cx } from '../lib/classes'
 import { loadPracticeFor, practiceFor, savePractice, savePracticeOnExit } from '../lib/practice'
-import { Notice } from '../components/ui'
 import { useBand } from '../lib/band'
 import { canBrowseLibrary, useMe } from '../lib/session'
 import { hrefCombine } from '../lib/combos'
@@ -21,10 +20,12 @@ import { CommentsLayer } from './CommentsLayer'
 import { CommentsPanel } from './CommentsPanel'
 import { FillPanel } from './FillPanel'
 import { LatencyCalibration } from './LatencyCalibration'
-import { addComment, removeComment, setLyrics, updateSong } from '../lib/band'
+import { ackComment, addComment, addVoiceComment, removeComment, setLyrics, updateSong } from '../lib/band'
 import { changedSince } from '../lib/activity'
 import { LyricSheetPanel } from './LyricSheetPanel'
 import { chordsByBar, type ChordScore } from './scoreChords'
+import { barStartsMs, scoreSyllables, type LyricScore } from './scoreLyrics'
+import { sheetFromSyllables } from '@/songs/lyricSheet'
 import { openInRehearsal } from '../lib/rehearsalNav'
 import { sendRehearsal } from '../lib/rehearsal'
 import { useDrumStyles } from '../lib/drums'
@@ -1470,6 +1471,11 @@ export function ScoreViewer({
   const sections = useMemo(() => sectionsOf((score?.masterBars ?? []) as never), [score])
   const chords = useMemo(() => chordsByBar(score as unknown as ChordScore | null), [score])
   const lyricLines = bandSong?.lyrics ?? []
+  const barStarts = useMemo(() => barStartsMs(score as unknown as LyricScore | null), [score])
+  const scoreLines = useMemo(
+    () => sheetFromSyllables(scoreSyllables(score as unknown as LyricScore | null)),
+    [score],
+  )
   const showLyrics = lyricsOpen ?? (me?.instrument === 'vocal' && lyricLines.length > 0)
   const sectionIdx = sectionAt(sections, bar)
   const nextSec = nextSection(sections, bar)
@@ -1529,36 +1535,42 @@ export function ScoreViewer({
       <style>{SHEET_CSS}</style>
       {bandSong && !changesSeen && changedBars.length > 0 && (
         <div className="gutter mx-auto mb-2 w-full max-w-[1180px]">
-          <Notice tone="muted">
-            上次排练后有 {changedBars.length} 处改动：
+          <ViewerNote
+            action={
+              <button
+                type="button"
+                className={NOTE_ACTION}
+                onClick={() => setChangesSeen(true)}
+              >
+                知道了
+              </button>
+            }
+          >
+            <span>上次排练后有 {changedBars.length} 处改动：</span>
             {changedBars.map((b) => (
               <button
                 key={b}
                 type="button"
-                className="ml-2 rounded border border-border px-1.5 py-0.5 text-xs hover:border-primary hover:text-primary"
+                className={cx(CHIP, 'ml-1.5 mt-1 text-xs')}
                 onClick={() => jumpToBar(b)}
               >
                 第 {b} 小节
               </button>
             ))}
-            <button
-              type="button"
-              className="ml-3 text-xs underline-offset-4 hover:underline"
-              onClick={() => setChangesSeen(true)}
-            >
-              知道了
-            </button>
-          </Notice>
+          </ViewerNote>
         </div>
       )}
       {bandSong && rehearsalMode && reh.ended && (
         <div className="gutter mx-auto mb-2 w-full max-w-[1180px]">
-          <Notice tone="muted">
+          <ViewerNote
+            action={
+              <a className={NOTE_ACTION} href={HREF_BAND}>
+                回到乐队
+              </a>
+            }
+          >
             排练已经结束，现在是自己练习。
-            <a className="ml-2 underline-offset-4 hover:underline" href={HREF_BAND}>
-              回到乐队 →
-            </a>
-          </Notice>
+          </ViewerNote>
         </div>
       )}
       {bandSong && reh.here && rehState && me && (
@@ -1587,26 +1599,38 @@ export function ScoreViewer({
                 }
                 playing={rehState.playing}
                 role={reh.isSpeaker ? '你是音箱' : reh.sounding ? '耳机出声' : '静音看谱'}
+                leader={reh.isLeader}
+                filling={
+                  plan
+                    ? [
+                        ...plan.tracks.filter((t) => t.play).map((t) => t.name || `音轨 ${t.index + 1}`),
+                        ...(plan.drums.play ? ['鼓'] : []),
+                      ]
+                    : null
+                }
                 light={reh.light}
               />
             </div>
           </div>
           {reh.stalled && (
             <div className="gutter mx-auto mb-2 w-full max-w-[1180px]">
-              <Notice tone="muted">
+              <ViewerNote
+                action={
+                  !rehState.devices.some((d) => d.deviceId === rehState.speakerDevice && d.connected) ? (
+                    <button
+                      type="button"
+                      className={NOTE_ACTION}
+                      onClick={() => void reh.conn.send({ type: 'speaker', take: true }).catch(() => undefined)}
+                    >
+                      用这台设备当音箱
+                    </button>
+                  ) : null
+                }
+              >
                 音箱掉线了，音乐已暂停在这里。
-                {!rehState.devices.some((d) => d.deviceId === rehState.speakerDevice && d.connected) ? (
-                  <button
-                    type="button"
-                    className="ml-2 underline underline-offset-4"
-                    onClick={() => void reh.conn.send({ type: 'speaker', take: true }).catch(() => undefined)}
-                  >
-                    用这台设备当音箱
-                  </button>
-                ) : (
-                  ' 音箱回来了，指挥按播放就能继续。'
-                )}
-              </Notice>
+                {rehState.devices.some((d) => d.deviceId === rehState.speakerDevice && d.connected) &&
+                  ' 音箱回来了，指挥按播放就能继续。'}
+              </ViewerNote>
             </div>
           )}
           <div className="gutter mx-auto mb-2 w-full max-w-[1180px]">
@@ -1650,24 +1674,12 @@ export function ScoreViewer({
           </div>
         </>
       )}
-      {bandSong && !reh.here && (
+      {bandSong && !reh.here && myTrack !== null && (
         <div className="gutter mx-auto mb-2 w-full max-w-[1180px]">
-          {myTrack !== null && (
-            <p className="mt-1 text-xs text-muted-foreground">
-              你在这首歌里弹「{trackNames[myTrack] ?? `音轨 ${myTrack + 1}`}
-              」，已自动显示你的声部并静音它，其他声部照常伴奏。
-            </p>
-          )}
-          <button
-            type="button"
-            className="mt-1 text-xs text-muted-foreground underline-offset-4 hover:underline"
-            onClick={() => {
-              setFocusBar(null)
-              setCommentsOpen(true)
-            }}
-          >
-            小节留言（{bandSong.comments?.length ?? 0}）
-          </button>
+          <p className="m-0 text-[13px] text-muted-foreground">
+            你在这首歌里弹「{trackNames[myTrack] ?? `音轨 ${myTrack + 1}`}
+            」，已自动显示你的声部并静音它，其他声部照常伴奏。
+          </p>
         </div>
       )}
       {bandSong && (rehPop === 'comments' || commentsOpen) && (
@@ -1687,6 +1699,8 @@ export function ScoreViewer({
             focusBar={focusBar}
             onAdd={(b, text, kind) => addComment(bandSong.id, b, text, kind)}
             onRemove={(id) => removeComment(bandSong.id, id)}
+            onAck={(id) => ackComment(bandSong.id, id)}
+            onVoice={(b, clip) => addVoiceComment(bandSong.id, b, clip)}
             onJump={(b) => {
               jumpToBar(b)
               setRehPop(null)
@@ -1731,66 +1745,79 @@ export function ScoreViewer({
         />
       )}
       {convRec && (
-        <div className="gutter mx-auto mb-3 w-full max-w-[1180px] rounded-lg border border-border px-3 py-2">
-          <p className="m-0 text-sm">
-            <span className="font-bold">PDF 转换版（实验）</span>
-            <span className="text-muted-foreground">
-              {' '}
-              · {convRec.bars} 小节 · 请对照
-              <a
-                className="mx-1 underline-offset-4 hover:underline"
-                href={hrefViewer({ path, format: 'pdf', title, artist })}
-              >
-                原 PDF
-              </a>
-              检查，尤其是节奏。
-            </span>
-          </p>
-          <div className="mt-1 flex flex-wrap items-center gap-x-3">
-            <span className="text-xs text-muted-foreground">好不好用？给它打分：</span>
-            <StarRating
-              size="sm"
-              value={convRec.rating.average}
-              count={convRec.rating.count}
-              mine={convRec.myRating}
-              onRate={(stars) => {
-                void server
-                  .rateConversion(convRec.id, stars)
-                  .then(setConvRec)
-                  .catch(() => undefined)
-              }}
-            />
+        <div className="gutter mx-auto mb-2 w-full max-w-[1180px]">
+          <div className="rounded-[14px] border border-border bg-card px-3.5 py-2.5">
+            <p className="m-0 text-sm">
+              <span className="font-bold">PDF 转换版（实验）</span>
+              <span className="text-muted-foreground">
+                {' '}
+                · {convRec.bars} 小节 · 请对照
+                <a
+                  className="mx-1 underline-offset-4 hover:underline"
+                  href={hrefViewer({ path, format: 'pdf', title, artist })}
+                >
+                  原 PDF
+                </a>
+                检查，尤其是节奏。
+              </span>
+            </p>
+            <div className="mt-1 flex flex-wrap items-center gap-x-3">
+              <span className="text-xs text-muted-foreground">好不好用？给它打分：</span>
+              <StarRating
+                size="sm"
+                value={convRec.rating.average}
+                count={convRec.rating.count}
+                mine={convRec.myRating}
+                onRate={(stars) => {
+                  void server
+                    .rateConversion(convRec.id, stars)
+                    .then(setConvRec)
+                    .catch(() => undefined)
+                }}
+              />
+            </div>
           </div>
         </div>
       )}
       {/* 上传的简谱: many band scores have no singer's part; members upload one here. */}
       <div className="gutter mx-auto mb-2 w-full max-w-[1180px]">
-        {me && canBrowseLibrary(me) && (
-          <a
-            href={hrefCombine(path, combo || undefined)}
-            className="mr-4 text-xs text-muted-foreground underline-offset-4 hover:underline"
-          >
-            {combo ? '编辑这个组合乐队谱 →' : '组合乐队谱（从不同版本挑声部）→'}
-          </a>
-        )}
-        <button
-          type="button"
-          className="text-xs text-muted-foreground underline-offset-4 hover:underline"
-          aria-expanded={sheetsOpen}
-          onClick={() => setSheetsOpen((v) => !v)}
-        >
-          {sheetsOpen ? '收起简谱 / 歌词谱 ▴' : '简谱 / 歌词谱（上传的）▾'}
-        </button>
-        {bandSong && (
+        <div className="-mx-1 flex items-center gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none] sm:flex-wrap [&>*]:shrink-0">
+          {bandSong && !reh.here && (
+            <button
+              type="button"
+              className={CHIP}
+              onClick={() => {
+                setFocusBar(null)
+                setCommentsOpen(true)
+              }}
+            >
+              小节留言（{bandSong.comments?.length ?? 0}）
+            </button>
+          )}
+          {bandSong && (
+            <button
+              type="button"
+              className={cx(CHIP, showLyrics && CHIP_ON)}
+              aria-expanded={showLyrics}
+              onClick={() => toggleLyrics(!showLyrics)}
+            >
+              {showLyrics ? '收起词谱 ▴' : lyricLines.length > 0 ? '词谱 ▾' : '词谱（还没有歌词）▾'}
+            </button>
+          )}
           <button
             type="button"
-            className="ml-4 text-xs text-muted-foreground underline-offset-4 hover:underline"
-            aria-expanded={showLyrics}
-            onClick={() => toggleLyrics(!showLyrics)}
+            className={cx(CHIP, sheetsOpen && CHIP_ON)}
+            aria-expanded={sheetsOpen}
+            onClick={() => setSheetsOpen((v) => !v)}
           >
-            {showLyrics ? '收起词谱 ▴' : lyricLines.length > 0 ? '词谱（歌词跟着走）▾' : '词谱（还没有歌词）▾'}
+            {sheetsOpen ? '收起简谱 ▴' : '上传的简谱 ▾'}
           </button>
-        )}
+          {me && canBrowseLibrary(me) && (
+            <a href={hrefCombine(path, combo || undefined)} className={CHIP}>
+              {combo ? '编辑组合乐队谱 →' : '组合乐队谱 →'}
+            </a>
+          )}
+        </div>
         {sheetsOpen && (
           <div className="mt-2">
             <SheetsPanel path={path} />
@@ -1799,10 +1826,10 @@ export function ScoreViewer({
       </div>
       {bandSong && showLyrics && (
         // Stays under the header (and the rehearsal's status line) while the score scrolls below.
-        <div className="sticky z-20" style={{ top: reh.here ? 44 : 0 }}>
+        <div className={cx('sticky z-20', reh.here ? 'top-[68px] lg:top-[40px]' : 'top-0')}>
           <div className="gutter mx-auto mb-2 w-full max-w-[1180px]">
             <div
-              className="overflow-y-auto rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3"
+              className="overflow-y-auto rounded-[14px] border border-border bg-card p-3"
               style={{ maxHeight: '46vh' }}
             >
               <LyricSheetPanel
@@ -1818,14 +1845,16 @@ export function ScoreViewer({
                   else if (api.current) api.current.tickPosition = tick
                 }}
                 onSave={(lines) => setLyrics(bandSong.id, lines)}
+                barStartsMs={barStarts}
+                scoreLines={scoreLines}
               />
             </div>
           </div>
         </div>
       )}
       {phase === 'error' && (
-        <div className="px-4">
-          <Notice tone="error">{message}</Notice>
+        <div className="gutter mx-auto mb-2 w-full max-w-[1180px]">
+          <ViewerNote tone="error">{message}</ViewerNote>
         </div>
       )}
       <div
@@ -2011,6 +2040,35 @@ export function ScoreViewer({
   )
 }
 
+/** A chip in the row of links under the title (小节留言, 词谱, 简谱, 组合乐队谱). */
+const CHIP =
+  'inline-flex min-h-11 items-center gap-1.5 rounded-full border border-border bg-card px-3.5 text-[13px] text-foreground no-underline transition-colors hover:bg-[hsl(var(--raised))] sm:min-h-9'
+/** The lit state of a CHIP (its panel is open). */
+const CHIP_ON = 'border-primary/45 bg-accent text-primary hover:bg-accent'
+/** The one action of a ViewerNote. */
+const NOTE_ACTION = cx(buttonClass('outline'), 'shrink-0 bg-background px-3 text-[13px] no-underline')
+
+/** A small notice card over the sheet: a few words and at most one clear action. */
+function ViewerNote(props: {
+  tone?: 'muted' | 'error'
+  action?: React.ReactNode
+  children: React.ReactNode
+}) {
+  const error = props.tone === 'error'
+  return (
+    <div
+      role={error ? 'alert' : 'status'}
+      className={cx(
+        'flex flex-wrap items-center gap-x-3 gap-y-2 rounded-[14px] border bg-card px-3.5 py-2.5 text-sm leading-relaxed',
+        error ? 'border-destructive/50 text-destructive' : 'border-border text-foreground',
+      )}
+    >
+      <div className="min-w-0 flex-1">{props.children}</div>
+      {props.action}
+    </div>
+  )
+}
+
 /** A simple dialog over the score (補位, 留言): closes with Escape or the ✕. */
 function RehearsalDialog(props: { title: string; onClose: () => void; children: React.ReactNode }) {
   const { onClose } = props
@@ -2032,13 +2090,13 @@ function RehearsalDialog(props: { title: string; onClose: () => void; children: 
         role="dialog"
         aria-modal="true"
         aria-label={props.title}
-        className="gl-dialog-in gl-sheet-sm max-h-[85dvh] w-full max-w-[860px] overflow-y-auto overscroll-contain rounded-t-xl border border-border bg-card p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:rounded-xl sm:pb-4"
+        className="gl-dialog-in gl-sheet-sm max-h-[85dvh] w-full max-w-[860px] overflow-y-auto overscroll-contain rounded-t-2xl border border-border bg-card p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:rounded-2xl sm:pb-4"
       >
         <div className="mb-3 flex items-center justify-between gap-3">
           <h2 className="m-0 text-base font-bold">{props.title}</h2>
           <button
             type="button"
-            className="h-9 w-9 rounded-md border border-border"
+            className="grid h-11 w-11 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-[hsl(var(--raised))] hover:text-foreground"
             aria-label="关闭"
             onClick={onClose}
           >

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ScoreArtist } from '@/songs/scoreLibraryTypes'
 import { api } from '../lib/api'
-import { cx, PAGE_SIZE } from '../lib/classes'
+import { cx, LIST, PAGE_SIZE, SECTION_TITLE } from '../lib/classes'
 import { hrefArtist, hrefCategory } from '../lib/route'
 import { useLibrary } from '../lib/libraryContext'
 import { groupByInitial, initialOf, sortArtists, type ArtistSort } from '../lib/sort'
@@ -18,7 +18,7 @@ export interface GroupRoute {
 
 const LETTERS = Array.from({ length: 26 }, (_, i) => String.fromCharCode(65 + i))
 
-/** 索引: a group's artists as a back-of-book index, with an A–Z jump row above. */
+/** A group's artists as card lists by initial (or one list by count), with an A–Z jump row above. */
 export function ArtistsPage({ group }: { group: GroupRoute }) {
   const { info, version } = useLibrary()
   const [sort, setSort] = useHistoryState<ArtistSort>('sort', 'name')
@@ -46,8 +46,9 @@ export function ArtistsPage({ group }: { group: GroupRoute }) {
   // The category above this group: a multi-group category is a page of its own.
   const categoryId = group.id.split('/')[0] ?? ''
   const category = info?.categories.find((c) => c.id === categoryId)
-  const back = category ? `← 目录 · ${category.name}` : '← 目录'
-  const backTo = category && category.groups.length > 1 ? hrefCategory(category.id) : '#/'
+  const multi = category !== undefined && category.groups.length > 1
+  const back = multi ? `‹ ${category.name}` : '‹ 谱库'
+  const backTo = multi ? hrefCategory(category.id) : '#/'
 
   // An old link: this folder used to be a group (e.g. 动漫音乐/BanG Dream!) and is now an
   // artist / work of its category. Go to that page instead of an empty one.
@@ -121,7 +122,7 @@ export function ArtistsPage({ group }: { group: GroupRoute }) {
       {sorted.length > 0 && (
         <>
           {sort === 'name' && (
-            <nav aria-label="按字母跳转" className="flex flex-wrap gap-0.5 pb-[18px] pt-1.5">
+            <nav aria-label="按字母跳转" className="flex flex-wrap gap-0.5 pb-3">
               {jumpLetters.map((letter) => {
                 const present = letters.has(letter)
                 return (
@@ -132,10 +133,10 @@ export function ArtistsPage({ group }: { group: GroupRoute }) {
                     onClick={() => jumpTo(letter)}
                     aria-label={present ? `跳到 ${letter}` : `${letter}，没有歌手`}
                     className={cx(
-                      'mono grid h-11 w-[30px] place-items-center rounded text-[13px] transition-colors',
+                      'mono grid h-11 w-[30px] place-items-center rounded-lg text-[13px] transition-colors',
                       present
-                        ? 'text-foreground hover:bg-primary/10 hover:text-primary'
-                        : 'cursor-default text-border',
+                        ? 'text-foreground hover:bg-[hsl(var(--raised))] hover:text-primary'
+                        : 'cursor-default text-muted-foreground/40',
                     )}
                   >
                     {letter}
@@ -146,14 +147,15 @@ export function ArtistsPage({ group }: { group: GroupRoute }) {
           )}
 
           {sort === 'name' ? (
-            <div className="[column-gap:48px] [columns:3_260px]">
+            <div className="[column-gap:20px] [columns:2_340px]">
               {groupByInitial(shown).map((section) => (
-                <section key={section.letter} id={`sec-${section.letter}`} className="scroll-mt-28">
-                  <h2 className="mono mb-1 mt-[18px] flex items-center gap-2.5 text-[22px] font-semibold text-primary [break-after:avoid]">
-                    {section.letter}
-                    <span aria-hidden className="h-px flex-1 bg-border" />
-                  </h2>
-                  <ul className="m-0 list-none p-0">
+                <section
+                  key={section.letter}
+                  id={`sec-${section.letter}`}
+                  className="scroll-mt-28 pb-5 [break-inside:avoid]"
+                >
+                  <h2 className={cx(SECTION_TITLE, 'mono mb-2 text-primary')}>{section.letter}</h2>
+                  <ul className={cx(LIST, 'm-0 list-none p-0')}>
                     {section.items.map((a) => (
                       <ArtistEntry key={a.id} artist={a} />
                     ))}
@@ -162,7 +164,7 @@ export function ArtistsPage({ group }: { group: GroupRoute }) {
               ))}
             </div>
           ) : (
-            <ul className="m-0 list-none p-0 pt-2 [column-gap:48px] [columns:3_260px]">
+            <ul className={cx(LIST, 'm-0 list-none p-0')}>
               {shown.map((a) => (
                 <ArtistEntry key={a.id} artist={a} />
               ))}
@@ -183,24 +185,26 @@ export function ArtistsPage({ group }: { group: GroupRoute }) {
   )
 }
 
-/** One line of the index: name, a dotted leader, the count in mono. */
+/** One artist row: name (and other names) on the left, song count and a chevron on the right. */
 function ArtistEntry({ artist: a }: { artist: ScoreArtist }) {
   return (
-    <li className="[break-inside:avoid]">
+    <li className="border-t border-border first:border-t-0">
       <Link
         href={hrefArtist(a)}
-        className="group flex min-h-11 items-baseline gap-2 py-1.5 text-base"
+        className="flex min-h-[56px] items-center gap-3 px-3.5 py-2 transition-colors hover:bg-[hsl(var(--raised))]"
       >
-        <span className="min-w-0 break-words transition-colors group-hover:text-primary">
-          {a.name}
+        <span className="min-w-0 flex-1">
+          <b className="block break-words font-bold">{a.name}</b>
           {a.aliases && a.aliases.length > 0 && (
-            <span className="ml-1.5 text-xs text-muted-foreground">
+            <span className="block truncate text-[13px] text-muted-foreground">
               也叫 {a.aliases.join('、')}
             </span>
           )}
         </span>
-        <span aria-hidden className="leader" />
-        <span className="mono shrink-0 text-xs text-muted-foreground">{a.songs}</span>
+        <span className="mono shrink-0 text-[13px] text-muted-foreground">{a.songs} 首</span>
+        <span aria-hidden className="shrink-0 text-muted-foreground">
+          ›
+        </span>
       </Link>
     </li>
   )

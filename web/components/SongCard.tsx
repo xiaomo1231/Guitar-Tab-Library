@@ -1,6 +1,6 @@
 import type { ScoreSong, ScoreVersion } from '@/songs/scoreLibraryTypes'
 import type { VersionInfo } from '@/songs/scoreServerTypes'
-import { cx } from '../lib/classes'
+import { cx, PILL } from '../lib/classes'
 import { versionLine } from '@/songs/versionLine'
 import { FORMAT_BADGE, formatSize } from '../lib/format'
 import { hrefViewer } from '../lib/route'
@@ -23,8 +23,8 @@ function previewItemOf(song: ScoreSong, artistName: string, v: ScoreVersion): Pr
 }
 
 /**
- * One song in an artist's list: a title row that opens its versions inline
- * (a pen-blue rule on the left), each with a favourite star and 「看谱 →」.
+ * One song as a row of a LIST: a title row that opens its versions in place,
+ * each with a favourite star, 预览 and 看谱.
  */
 export function SongCard({
   song,
@@ -49,32 +49,34 @@ export function SongCard({
 }) {
   const title = song.unknownTitle ? '未识别的曲名' : song.title
   return (
-    <li className="border-b border-border">
+    <li className="border-t border-border first:border-t-0">
       <button
         type="button"
         aria-expanded={open}
         onClick={onToggle}
-        className="flex min-h-11 w-full items-baseline gap-3.5 py-3.5 text-left"
+        className="flex min-h-[60px] w-full items-center gap-3 px-3.5 py-2 text-left transition-colors hover:bg-[hsl(var(--raised))]"
       >
         {index !== undefined && (
-          <span className="mono text-xs text-muted-foreground">
+          <span className="mono w-6 shrink-0 text-xs text-muted-foreground">
             {String(index).padStart(2, '0')}
           </span>
         )}
-        <span className="flex min-w-0 flex-1 items-baseline gap-3">
-          <span className="min-w-0 break-words font-display text-[21px] font-black leading-snug">
+        <span className="min-w-0 flex-1">
+          <span className="block break-words font-bold leading-snug">
             {title}
             {(song.jianpu ?? 0) > 0 && <JianpuBadge />}
           </span>
-          <span aria-hidden className="leader" />
+          <span className="block truncate text-[13px] text-muted-foreground">
+            {formatsLine(song)}
+          </span>
         </span>
         {song.versions.length > 1 && (
-          <span className="mono text-xs text-muted-foreground">{song.versions.length} 个谱</span>
+          <span className={PILL}>{song.versions.length} 个谱</span>
         )}
         <span
           aria-hidden
           className={cx(
-            'text-lg text-muted-foreground transition-transform duration-200 motion-reduce:transition-none',
+            'shrink-0 text-lg text-muted-foreground transition-transform duration-200 motion-reduce:transition-none',
             open && 'rotate-90',
           )}
         >
@@ -95,7 +97,17 @@ export function SongCard({
   )
 }
 
-/** A song's versions (pen-blue rule on the left), each with ☆, 预览 and 看谱 →. */
+/** The formats a song has, in order of first appearance (GP · PDF · 图片). */
+function formatsLine(song: ScoreSong): string {
+  const seen: string[] = []
+  for (const v of song.versions) {
+    const label = FORMAT_BADGE[v.file.format].label
+    if (!seen.includes(label)) seen.push(label)
+  }
+  return seen.join(' · ')
+}
+
+/** A song's versions as hairline-divided rows (inside a card), each with ☆, 预览 and 看谱. */
 export function VersionList({
   song,
   artistName,
@@ -114,7 +126,7 @@ export function VersionList({
     song.versions.filter((v) => v.file.format === 'score').map((v) => v.file.path),
   )
   return (
-    <ul className="mb-3.5 list-none border-l-2 border-primary pl-[18px]">
+    <ul className="m-0 list-none border-t border-border bg-background/40 p-0">
       {song.versions.map((v) => (
         <VersionRow
           key={v.file.path}
@@ -166,15 +178,15 @@ function VersionRow({
   return (
     <li
       className={cx(
-        'grid grid-cols-[40px_minmax(0,1fr)] items-start gap-x-2.5 pt-2 min-[861px]:grid-cols-[52px_minmax(0,1fr)_auto] min-[861px]:items-center min-[861px]:gap-x-3 min-[861px]:py-1.5',
-        previewing && 'rounded-lg bg-card px-2',
+        'grid min-h-[56px] grid-cols-[44px_minmax(0,1fr)] items-start gap-x-2.5 border-t border-border py-2 pl-3.5 pr-2 transition-colors first:border-t-0 hover:bg-[hsl(var(--raised))] min-[861px]:grid-cols-[52px_minmax(0,1fr)_auto] min-[861px]:items-center min-[861px]:gap-x-3',
+        previewing && 'bg-[hsl(var(--raised))]',
       )}
     >
       <span
         className="mt-0.5 inline-flex min-[861px]:mt-0"
         title={`${FORMAT_BADGE[version.file.format].label} · ${formatSize(version.size)}`}
       >
-        <FormatBadge format={version.file.format} className="w-10 min-[861px]:w-[52px]" />
+        <FormatBadge format={version.file.format} className="w-11 min-[861px]:w-[52px]" />
       </span>
       <span className="min-w-0">
         <span className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5 text-sm">
@@ -191,7 +203,7 @@ function VersionRow({
             <span
               key={tag}
               title={tag}
-              className="max-w-[14em] truncate whitespace-nowrap rounded-[3px] border border-border px-1.5 text-[11px] leading-5 text-muted-foreground"
+              className="max-w-[14em] truncate whitespace-nowrap rounded-full border border-border px-2 text-[11px] leading-5 text-muted-foreground"
             >
               {tag}
             </span>
@@ -230,9 +242,9 @@ function VersionRow({
         <span className="inline-flex" onClickCapture={() => markSeen(version.file.path)}>
           <Link
             href={href}
-            className="inline-flex min-h-11 items-center px-1.5 text-[13px] text-primary"
+            className="inline-flex min-h-11 items-center gap-1 rounded-lg px-2 text-[13px] font-bold text-primary transition-colors hover:bg-primary/10 min-[861px]:min-h-8"
           >
-            看谱 →
+            看谱 <span aria-hidden>›</span>
           </Link>
         </span>
       </span>

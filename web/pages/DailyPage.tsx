@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { errorText, fileUrl, type DailyBacking, type DailyDay, type DailyState } from '../lib/api'
-import { cx } from '../lib/classes'
+import { buttonClass, CARD, cx, LIST, SECTION_TITLE } from '../lib/classes'
 import {
   clampDay,
   DAY_COUNT,
@@ -18,7 +18,7 @@ import {
   useDaily,
   writeReps,
 } from '../lib/daily'
-import { hrefViewer } from '../lib/route'
+import { hrefViewer, HREF_ACCOUNT } from '../lib/route'
 import { Link } from '../components/Link'
 import { Notice, PageBar, Seg } from '../components/ui'
 
@@ -49,14 +49,14 @@ export function DailyPage({ day }: { day: number | null }) {
   if (!state) {
     return (
       <>
-        <PageBar title="每日一练" fallback="#/" back="← 目录" />
+        <PageBar title="每日一练" fallback={HREF_ACCOUNT} back="‹ 我的" />
         <div className="max-w-[760px] py-6">
           {error ? <Notice tone="error">{error}</Notice> : <p className="text-sm text-muted-foreground">正在读取…</p>}
           {error && (
             <button
               type="button"
               onClick={reload}
-              className="mt-3 inline-flex min-h-11 items-center rounded-lg border border-border px-4 text-sm hover:border-foreground"
+              className={cx(buttonClass('outline'), 'mt-3')}
             >
               重试
             </button>
@@ -69,7 +69,7 @@ export function DailyPage({ day }: { day: number | null }) {
   if (!state.available) {
     return (
       <>
-        <PageBar title="每日一练" fallback="#/" back="← 目录" />
+        <PageBar title="每日一练" fallback={HREF_ACCOUNT} back="‹ 我的" />
         <div className="max-w-[760px] py-6">
           <Notice>谱库里没有找到「每日一练」文件夹。</Notice>
         </div>
@@ -89,8 +89,8 @@ export function DailyPage({ day }: { day: number | null }) {
     <>
       <PageBar
         title="每日一练"
-        fallback="#/"
-        back="← 目录"
+        fallback={HREF_ACCOUNT}
+        back="‹ 我的"
         subtitle={
           info
             ? `第 ${shown} 天 · 第 ${info.week} 周 ${info.weekday} · 技巧：${info.technique}`
@@ -119,8 +119,10 @@ export function DailyPage({ day }: { day: number | null }) {
         )}
 
         <div className="pt-8">
-          <p className="label mb-2.5">日历</p>
-          <Calendar days={state.days} done={done} bpm={state.bpm} today={today} shown={shown} />
+          <h2 className={cx(SECTION_TITLE, 'mb-2.5')}>日历</h2>
+          <div className={CARD}>
+            <Calendar days={state.days} done={done} bpm={state.bpm} today={today} shown={shown} />
+          </div>
         </div>
 
         <Extras extras={state.extras} />
@@ -214,7 +216,7 @@ function DayBody({
         <div className="pt-5 text-sm">
           {day.method && (
             <p className="m-0 leading-relaxed">
-              <span className="label mr-2">练法</span>
+              <span className="mr-2 font-bold text-muted-foreground">练法</span>
               {day.method}
             </p>
           )}
@@ -223,7 +225,7 @@ function DayBody({
       )}
 
       <section aria-label="示范" className="pt-7">
-        <p className="label mb-2.5">1 · 听示范</p>
+        <h2 className={cx(SECTION_TITLE, 'mb-2.5')}>1 · 听示范</h2>
         {day.demo ? (
           <DemoPlayer key={day.demo} path={day.demo} />
         ) : (
@@ -232,9 +234,9 @@ function DayBody({
       </section>
 
       <section aria-label="跟伴奏练" className="pt-7">
-        <p className="label mb-2.5">
+        <h2 className={cx(SECTION_TITLE, 'mb-2.5')}>
           2 · 跟伴奏练{day.backingStyle ? `（${day.backingStyle}）` : ''}
-        </p>
+        </h2>
         <PracticePanel
           day={day}
           backing={state.backing}
@@ -250,7 +252,7 @@ function DayBody({
           disabled={busy || blocked}
           aria-pressed={shownDone}
           className={cx(
-            'flex min-h-14 w-full items-center justify-center rounded-lg text-lg font-bold transition-colors disabled:opacity-50',
+            'flex min-h-[52px] w-full items-center justify-center rounded-[14px] text-base font-bold transition-colors disabled:opacity-50',
             shownDone
               ? 'border border-border text-muted-foreground hover:border-foreground hover:text-foreground'
               : 'bg-primary text-primary-foreground hover:bg-primary-strong',
@@ -679,12 +681,12 @@ function Extras({ extras }: { extras: DailyState['extras'] }) {
   if (extras.length === 0) return null
   return (
     <details className="pt-8">
-      <summary className="label flex min-h-11 cursor-pointer select-none items-center">
+      <summary className={cx(SECTION_TITLE, 'flex min-h-11 cursor-pointer select-none items-center')}>
         全书与音频（{extras.length}）
       </summary>
-      <ul className="m-0 list-none p-0 pt-2">
+      <ul className={cx(LIST, 'm-0 mt-1 list-none p-0')}>
         {extras.map((x) => (
-          <li key={x.path} className="border-t border-border py-3 first:border-t-0">
+          <li key={x.path} className="border-t border-border px-3.5 py-3 first:border-t-0">
             <p className="m-0 break-words text-sm">{x.label}</p>
             {isAudio(x.path) ? (
               <audio controls preload="none" src={fileUrl(x.path)} className="mt-2 w-full" />

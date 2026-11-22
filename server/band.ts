@@ -70,6 +70,10 @@ const isSpeed = (v: unknown): v is number => Number.isInteger(v) && (v as number
 
 const codePoints = (s: string) => [...s].length
 
+/** How many members can acknowledge one 留言 (far above any band's size). */
+const MAX_ACKS = 64
+/** A recording id (16 hex chars), as the recording store makes them. */
+const isClipId = (v: unknown): v is string => typeof v === 'string' && /^[0-9a-f]{16}$/.test(v)
 const MARK_KINDS: readonly MarkKind[] = ['changed', 'problem', 'note']
 const isMarkKind = (v: unknown): v is MarkKind => typeof v === 'string' && (MARK_KINDS as readonly string[]).includes(v)
 
@@ -222,10 +226,12 @@ export function parseAddComment(body: Record<string, unknown>): ParseResult<AddC
   const text = typeof body.text === 'string' ? body.text.trim() : ''
   if (body.kind !== undefined && !isMarkKind(body.kind)) return { ok: false, error: '标记的种类不对。' }
   const kind = body.kind as MarkKind | undefined
-  // A 标记 (这里我改了…) says enough by itself; a plain 留言 needs words.
-  if (codePoints(text) < (kind ? 0 : 1) || codePoints(text) > MAX_COMMENT_CHARS)
+  if (body.clipId !== undefined && !isClipId(body.clipId)) return { ok: false, error: '找不到这段语音。' }
+  const clipId = body.clipId as string | undefined
+  // A 标记 (这里我改了…) or a voice note says enough by itself; a plain 留言 needs words.
+  if (codePoints(text) < (kind || clipId ? 0 : 1) || codePoints(text) > MAX_COMMENT_CHARS)
     return { ok: false, error: `留言要在 1–${MAX_COMMENT_CHARS} 个字之间。` }
-  return { ok: true, value: { songId, bar, text, ...(kind ? { kind } : {}) } }
+  return { ok: true, value: { songId, bar, text, ...(kind ? { kind } : {}), ...(clipId ? { clipId } : {}) } }
 }
 
 /**
@@ -309,12 +315,25 @@ function sanitizeComments(raw: unknown): BarComment[] {
     if (typeof text !== 'string') continue
     const trimmed = text.trim()
     const kind = isMarkKind(rec.kind) ? rec.kind : undefined
-    // A 标记 may come without words; a plain 留言 needs some.
-    if (codePoints(trimmed) < (kind ? 0 : 1) || codePoints(trimmed) > MAX_COMMENT_CHARS) continue
+    const clipId = isClipId(rec.clipId) ? rec.clipId : undefined
+    // A 标记 or a voice note may come without words; a plain 留言 needs some.
+    if (codePoints(trimmed) < (kind || clipId ? 0 : 1) || codePoints(trimmed) > MAX_COMMENT_CHARS) continue
     if (typeof userId !== 'string' || !userId) continue
     if (typeof at !== 'number' || !Number.isFinite(at)) continue
     seen.add(id)
-    out.push({ id, bar, text: trimmed, userId, at, ...(kind ? { kind } : {}) })
+    const acks = Array.isArray(rec.acks)
+      ? [...new Set(rec.acks.filter((a): a is string => typeof a === 'string' && a !== '' && a !== userId))].slice(0, MAX_ACKS)
+      : []
+    out.push({
+      id,
+      bar,
+      text: trimmed,
+      userId,
+      at,
+      ...(kind ? { kind } : {}),
+      ...(clipId ? { clipId } : {}),
+      ...(acks.length ? { acks } : {}),
+    })
   }
   return out
 }
@@ -539,8 +558,27 @@ export class BandStore {
         userId,
         at: now,
         ...(body.kind ? { kind: body.kind } : {}),
+        ...(body.clipId ? { clipId: body.clipId } : {}),
       }
       const updated: BandSong = { ...old, comments: [...comments, comment], updatedAt: now }
+      await this.commit(this.list.map((s) => (s.id === old.id ? updated : s)))
+      return updated
+    })
+  }
+
+  /** 「知道了」: a member has seen someone else's 留言 / 标记. Tapping twice changes nothing. */
+  ackComment(songId: string, commentId: string, userId: string): Promise<BandSong> {
+    return this.queue(async () => {
+      const old = this.list.find((s) => s.id === songId)
+      if (!old) throw new BandError(404, '找不到这首歌。')
+      const comment = (old.comments ?? []).find((c) => c.id === commentId)
+      if (!comment) throw new BandError(404, '找不到这条留言。')
+      const acks = comment.acks ?? []
+      if (comment.userId === userId || acks.includes(userId) || acks.length >= MAX_ACKS) return old
+      const updated: BandSong = {
+        ...old,
+        comments: (old.comments ?? []).map((c) => (c.id === commentId ? { ...c, acks: [...acks, userId] } : c)),
+      }
       await this.commit(this.list.map((s) => (s.id === old.id ? updated : s)))
       return updated
     })

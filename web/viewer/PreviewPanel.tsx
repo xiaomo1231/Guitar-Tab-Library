@@ -218,7 +218,7 @@ function PreviewSheet({
             href={fileUrl(item.path)}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-sm text-primary hover:underline"
+            className="inline-flex min-h-11 items-center self-start text-sm text-primary hover:underline"
           >
             在新窗口打开 PDF
           </a>
@@ -267,18 +267,18 @@ function PreviewSheet({
   const header = (
     <header className="flex shrink-0 items-start gap-3 border-b border-border px-4 py-3">
       <div className="min-w-0 flex-1">
-        <p className="truncate font-display text-lg font-black leading-snug">{item.title}</p>
-        <p className="truncate text-xs text-muted-foreground">
+        <p className="m-0 truncate text-lg font-bold leading-snug">{item.title}</p>
+        <p className="m-0 truncate text-[13px] text-muted-foreground">
           {[item.artist, item.label || fileBaseName(item.path)].filter(Boolean).join(' · ')}
         </p>
-        {kinds && <p className="mono truncate text-[11px] text-primary">{kinds}</p>}
+        {kinds && <p className="mono m-0 mt-0.5 truncate text-[11px] text-primary">{kinds}</p>}
       </div>
       <button
         type="button"
         onClick={close}
         aria-label="关闭预览"
         title="关闭预览 (Esc)"
-        className="grid h-11 w-11 shrink-0 place-items-center rounded-lg text-lg text-muted-foreground hover:bg-card hover:text-foreground min-[861px]:h-9 min-[861px]:w-9"
+        className="grid h-11 w-11 shrink-0 place-items-center rounded-full text-lg text-muted-foreground transition-colors hover:bg-[hsl(var(--raised))] hover:text-foreground min-[861px]:h-9 min-[861px]:w-9"
       >
         <span aria-hidden>✕</span>
       </button>
@@ -297,7 +297,7 @@ function PreviewSheet({
           aria-label="快速预览"
           data-state={state}
           style={{ top: 0 }}
-          className="gl-preview-desk fixed bottom-0 right-0 z-40 flex w-[min(46vw,720px)] flex-col border-l border-border bg-background shadow-[-12px_0_32px_-16px_rgba(0,0,0,0.45)]"
+          className="gl-preview-desk fixed bottom-0 right-0 z-40 flex w-[min(46vw,720px)] flex-col border-l border-border bg-card shadow-[-12px_0_32px_-16px_rgba(0,0,0,0.45)]"
         >
           {header}
           <div className="flex min-h-0 flex-1 flex-col">{body}</div>
@@ -322,7 +322,7 @@ function PreviewSheet({
         data-state={state}
         data-dragging={drag.current !== null && dragY > 0 ? '' : undefined}
         style={{ height: '72dvh', ['--drag' as string]: `${dragY}px` }}
-        className="gl-preview-phone fixed inset-x-0 bottom-0 z-[60] flex flex-col rounded-t-2xl border-t border-border bg-background shadow-[0_-12px_32px_-12px_rgba(0,0,0,0.45)]"
+        className="gl-preview-phone fixed inset-x-0 bottom-0 z-[60] flex flex-col rounded-t-2xl border-t border-border bg-card shadow-[0_-12px_32px_-12px_rgba(0,0,0,0.45)]"
       >
         <div
           onPointerDown={onHandleDown}
@@ -376,7 +376,7 @@ function PreviewFooter({
   }
 
   const navBtn =
-    'h-11 rounded-lg border border-border px-3 text-sm disabled:opacity-40 min-[861px]:h-9'
+    'h-11 rounded-lg border border-border px-3 text-sm transition-colors hover:bg-[hsl(var(--raised))] disabled:opacity-40 disabled:hover:bg-transparent min-[861px]:h-9'
 
   return (
     <footer
@@ -388,7 +388,7 @@ function PreviewFooter({
         aria-pressed={starred}
         onClick={() => void toggle()}
         className={cx(
-          'inline-flex h-11 items-center gap-1.5 rounded-lg px-2.5 text-sm min-[861px]:h-9',
+          'inline-flex h-11 items-center gap-1.5 rounded-lg px-2.5 text-sm transition-colors hover:bg-[hsl(var(--raised))] min-[861px]:h-9',
           starred ? 'text-primary' : 'text-muted-foreground hover:text-primary',
         )}
       >
@@ -550,7 +550,7 @@ function ScoreBody({ path, onSummary }: { path: string; onSummary: (summary: str
           onClick={() => apiRef.current?.playPause()}
           disabled={!ready}
           aria-label={playing ? '暂停' : '播放'}
-          className="grid h-11 w-11 place-items-center rounded-lg border border-border disabled:opacity-40 min-[861px]:h-9 min-[861px]:w-9"
+          className="grid h-11 w-11 place-items-center rounded-lg border border-border transition-colors hover:bg-[hsl(var(--raised))] disabled:opacity-40 min-[861px]:h-9 min-[861px]:w-9"
         >
           <span aria-hidden>{playing ? '❚❚' : '▶'}</span>
         </button>
@@ -559,7 +559,7 @@ function ScoreBody({ path, onSummary }: { path: string; onSummary: (summary: str
           onClick={() => apiRef.current?.stop()}
           disabled={!ready}
           aria-label="回到开头"
-          className="grid h-11 w-11 place-items-center rounded-lg border border-border disabled:opacity-40 min-[861px]:h-9 min-[861px]:w-9"
+          className="grid h-11 w-11 place-items-center rounded-lg border border-border transition-colors hover:bg-[hsl(var(--raised))] disabled:opacity-40 min-[861px]:h-9 min-[861px]:w-9"
         >
           <span aria-hidden>■</span>
         </button>

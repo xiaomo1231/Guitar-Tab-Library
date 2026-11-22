@@ -1,78 +1,65 @@
-import { useEffect, useMemo, useState } from 'react'
-import type { ScoreSearchResult, ScoreVersion } from '@/songs/scoreLibraryTypes'
-import type { BandActivity, RehearsalSession } from '@/songs/scoreServerTypes'
+import { useEffect, useState, type ReactNode } from 'react'
 import {
   api,
   errorText,
   type BandBrief,
   type BandSong,
-  type BandState,
   type DailyMemberProgress,
-  type MemberProgress,
-  type SongStatus,
-  type UploadSong,
   type UserInfo,
 } from '../lib/api'
-import {
-  addSong,
-  leaveBand,
-  removeMember,
-  rename,
-  reorder,
-  setLeader,
-  setSetlist,
-  STATUS_LABELS,
-  updateSong,
-  useBand,
-} from '../lib/band'
-import { buttonClass, cx } from '../lib/classes'
-import { todayNumber } from '../lib/daily'
-import { useRehearsal } from '../lib/rehearsal'
-import { openInRehearsal } from '../lib/rehearsalNav'
-import { canBrowseLibrary, chooseBand, INSTRUMENT_LABELS, useMe } from '../lib/session'
-import { fmtDuration } from '../lib/practice'
-import { activityText, relativeTime } from '../lib/activity'
-import { hrefBandSong, hrefEnsembles, hrefUpload, navigate } from '../lib/route'
-import { FormatBadge, Notice, PageBar, Seg } from '../components/ui'
+import { rename, reorder, updateSong, useBand } from '../lib/band'
+import { buttonClass, CARD, cx, LIST, LIST_ROW, SECTION_TITLE, SELECT } from '../lib/classes'
+import { canBrowseLibrary, chooseBand, useMe } from '../lib/session'
+import { navigate } from '../lib/route'
+import { Notice, Tabs } from '../components/ui'
 import { Link } from '../components/Link'
 import { InvitesPanel } from '../components/InvitesPanel'
+import { RehearsalHero } from './band/RehearsalHero'
+import { AddSongs, OwnScores, SongCard } from './band/Setlist'
+import { MembersSection } from './band/Members'
+import { ActivitySection, SessionsSection } from './band/Side'
+import { chipClass, FILTERS, NEXT_STATUS, SMALL_BUTTON, swapped, type Filter } from './band/shared'
 
-type Filter = 'all' | SongStatus
+type Tab = 'songs' | 'members' | 'settings'
 
-const FILTERS: ReadonlyArray<readonly [Filter, string]> = [
-  ['all', '全部'],
-  ['learning', STATUS_LABELS.learning],
-  ['ready', STATUS_LABELS.ready],
-  ['maybe', STATUS_LABELS.maybe],
+const TABS: ReadonlyArray<readonly [Tab, string]> = [
+  ['songs', '歌单'],
+  ['members', '成员'],
+  ['settings', '设置'],
 ]
 
-/** Tap order of the status chip. */
-const NEXT_STATUS: Record<SongStatus, SongStatus> = {
-  learning: 'ready',
-  ready: 'maybe',
-  maybe: 'learning',
-}
+const INPUT =
+  'h-11 min-w-0 rounded-lg border border-border bg-transparent px-3 text-base text-foreground outline-none focus:border-primary'
 
-const STATUS_CLASS: Record<SongStatus, string> = {
-  learning: 'border-primary text-primary',
-  ready: 'border-foreground text-foreground',
-  maybe: 'border-muted-foreground text-muted-foreground',
+/** The page's title row: the band's name, a quiet count, and tools on the right. */
+function TitleRow({ title, subtitle, children }: { title: string; subtitle?: string; children?: ReactNode }) {
+  return (
+    <header className="flex flex-wrap items-center gap-x-4 gap-y-2 pb-4 pt-5 min-[861px]:pt-7">
+      <div className="min-w-0 flex-1">
+        <h1 className="m-0 break-words font-display text-[26px] font-black leading-tight min-[861px]:text-[30px]">
+          {title}
+        </h1>
+        {subtitle && <p className="mono m-0 mt-0.5 text-xs text-muted-foreground">{subtitle}</p>}
+      </div>
+      {children}
+    </header>
+  )
 }
-
-const ICON_BUTTON =
-  'grid h-11 w-11 place-items-center rounded-lg border border-border text-base text-muted-foreground transition-colors hover:border-foreground hover:text-foreground disabled:opacity-40'
 
 /** Not in any band yet: type an invite code (or open the link the leader sent). */
 function NoBand() {
   const [code, setCode] = useState('')
   const clean = code.replace(/\s+/g, '').toUpperCase()
   return (
-    <>
-      <PageBar title="乐队" fallback="#/" back="← 目录" />
-      <div className="max-w-[640px] space-y-4 py-6">
-        <Notice>
-          你还没有加入任何乐队。向队长要一个邀请码填在下面；如果对方发的是链接，直接打开就行，不用另外注册。
-        </Notice>
+    <div className="max-w-[640px]">
+      <TitleRow title="乐队" />
+      <div className={cx(CARD, 'space-y-4')}>
+        <div>
+          <h2 className="m-0 text-[17px] font-bold">还没有加入乐队</h2>
+          <p className="m-0 mt-1 text-sm leading-relaxed text-muted-foreground">
+            你还没有加入任何乐队。向队长要一个邀请码填在下面；如果对方发的是链接，直接打开就行，不用另外注册。
+          </p>
+        </div>
         <form
           className="flex flex-wrap gap-2"
           onSubmit={(e) => {
@@ -91,217 +78,59 @@ function NoBand() {
             autoCapitalize="characters"
             autoComplete="off"
             spellCheck={false}
-            className="mono h-11 min-w-0 flex-1 basis-56 rounded-lg border border-border bg-transparent px-3 text-base tracking-[0.1em] text-foreground focus:border-primary"
+            className={cx(INPUT, 'mono flex-1 basis-56 bg-background tracking-[0.1em]')}
           />
           <button
             type="submit"
             disabled={!/^[A-Z0-9_-]{10,64}$/i.test(clean)}
-            className={buttonClass('primary') + ' min-h-11 px-4'}
+            className={cx(buttonClass('primary'), 'px-5')}
           >
             加入
           </button>
         </form>
       </div>
-    </>
+    </div>
   )
 }
 
 /** Several bands: which one the pages work in (remembered on this device). */
 function BandSwitcher({ bands, current }: { bands: BandBrief[]; current: string }) {
   return (
-    <div className="flex max-w-[640px] flex-wrap items-center gap-2 pt-4" role="group" aria-label="切换乐队">
-      <span className="text-xs text-muted-foreground">我的乐队</span>
-      {bands.map((b) => (
-        <button
-          key={b.id}
-          type="button"
-          aria-pressed={b.id === current}
-          onClick={() => chooseBand(b.id)}
-          className={cx(
-            'inline-flex min-h-9 items-center rounded-full border px-3 text-sm transition-colors',
-            b.id === current
-              ? 'border-primary bg-primary text-primary-foreground'
-              : 'border-border text-muted-foreground hover:border-foreground hover:text-foreground',
-          )}
-        >
-          {b.name}
-          {b.leader && <span className="ml-1 text-[11px] opacity-80">队长</span>}
-        </button>
-      ))}
-      <Link href="#/invite" className="text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground">
+    <div className="flex items-center gap-2" role="group" aria-label="切换乐队">
+      <label className="sr-only" htmlFor="band-switch">
+        我的乐队
+      </label>
+      <select
+        id="band-switch"
+        value={current}
+        onChange={(e) => chooseBand(e.target.value)}
+        className={cx(SELECT, 'max-w-[14rem] bg-card font-medium')}
+      >
+        {bands.map((b) => (
+          <option key={b.id} value={b.id}>
+            {b.name}
+            {b.leader ? '（队长）' : ''}
+          </option>
+        ))}
+      </select>
+      <Link
+        href="#/invite"
+        className="inline-flex min-h-11 items-center text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+      >
         加入其他乐队
       </Link>
     </div>
   )
 }
 
-const MB = 1024 * 1024
-const fmtSpace = (n: number) => (n >= 1024 * MB ? `${(n / 1024 / MB).toFixed(1)} GB` : `${Math.round(n / MB)} MB`)
-
-/** 成员: who is in the band; the leader can take people out or hand over; anyone else can leave. */
-function MembersSection({
-  band,
-  meId,
-  manager,
-  daily,
-}: {
-  band: BandState
-  meId: string | null
-  manager: boolean
-  daily: Map<string, DailyMemberProgress> | null
-}) {
-  const [managing, setManaging] = useState(false)
-  const [confirm, setConfirm] = useState<{ kind: 'remove' | 'leader' | 'leave'; id: string } | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const nameOf = (id: string) => band.members.find((m) => m.id === id)?.displayName ?? '这位成员'
-  const imLeader = meId === band.leaderId
-
-  const act = async () => {
-    if (!confirm || busy) return
-    setBusy(true)
-    setError(null)
-    try {
-      if (confirm.kind === 'remove') await removeMember(confirm.id)
-      else if (confirm.kind === 'leader') await setLeader(confirm.id)
-      else if (meId) await leaveBand(meId)
-      setConfirm(null)
-    } catch (e) {
-      setError(errorText(e))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const question =
-    confirm?.kind === 'remove'
-      ? `把「${nameOf(confirm.id)}」移出乐队？TA 分到的声部会空出来，留言保留。之后可以再发邀请码让 TA 回来。`
-      : confirm?.kind === 'leader'
-        ? `把队长交给「${nameOf(confirm.id)}」？交出去后你就是普通成员了，不能再邀请人或移出成员。`
-        : `退出「${band.name}」？你在这个乐队分到的声部会空出来。之后要回来需要队长重新邀请。`
-
-  return (
-    <section aria-labelledby="band-members" className="max-w-[640px] pt-6">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 id="band-members" className="label m-0">
-          成员
-          <span className="ml-2 normal-case tracking-normal text-muted-foreground">
-            {band.members.length} / {band.limits.maxMembers}
-          </span>
-        </h2>
-        <span className="flex flex-wrap items-center gap-3">
-          {manager && band.members.length > 1 && (
-            <button
-              type="button"
-              onClick={() => {
-                setManaging((v) => !v)
-                setConfirm(null)
-              }}
-              className="text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground"
-            >
-              {managing ? '完成' : '管理成员'}
-            </button>
-          )}
-          {!imLeader && meId && band.members.some((m) => m.id === meId) && (
-            <button
-              type="button"
-              onClick={() => setConfirm({ kind: 'leave', id: meId })}
-              className="text-xs text-muted-foreground underline underline-offset-4 hover:text-destructive"
-            >
-              退出乐队
-            </button>
-          )}
-        </span>
-      </div>
-      <ul className="m-0 mt-2.5 flex list-none flex-wrap gap-2 p-0">
-        {band.members.map((m) => (
-          <li
-            key={m.id}
-            className="inline-flex min-h-11 flex-col justify-center gap-0.5 rounded-2xl border border-border px-3.5 py-1.5 text-sm"
-          >
-            <span className="flex items-center gap-2">
-              <span className="font-medium">
-                {m.displayName}
-                {meId === m.id && <span className="text-muted-foreground">（我）</span>}
-              </span>
-              {m.id === band.leaderId && (
-                <span className="mono rounded-[3px] border border-primary px-1 text-[11px] leading-5 text-primary">
-                  队长
-                </span>
-              )}
-              <span className="mono text-xs text-muted-foreground">
-                {m.instrument ? INSTRUMENT_LABELS[m.instrument] : '未设乐器'}
-              </span>
-            </span>
-            {daily && <span className="mono text-[11px] text-muted-foreground">{dailyLine(daily.get(m.id))}</span>}
-            {managing && m.id !== band.leaderId && (
-              <span className="flex gap-3 pt-1">
-                <button
-                  type="button"
-                  onClick={() => setConfirm({ kind: 'remove', id: m.id })}
-                  className="text-xs text-muted-foreground underline underline-offset-4 hover:text-destructive"
-                >
-                  移出
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setConfirm({ kind: 'leader', id: m.id })}
-                  className="text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground"
-                >
-                  设为队长
-                </button>
-              </span>
-            )}
-          </li>
-        ))}
-      </ul>
-      {confirm && (
-        <div role="alertdialog" className="mt-3 space-y-3 rounded-lg border border-border p-4">
-          <p className="m-0 text-sm leading-relaxed">{question}</p>
-          {error && (
-            <p role="alert" className="m-0 text-sm text-destructive">
-              {error}
-            </p>
-          )}
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => void act()}
-              disabled={busy}
-              className={cx(
-                buttonClass('outline'),
-                'min-h-11 px-3',
-                confirm.kind !== 'leader' && 'border-destructive text-destructive',
-              )}
-            >
-              {busy ? '正在保存…' : confirm.kind === 'remove' ? '移出' : confirm.kind === 'leader' ? '交给 TA' : '退出'}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setConfirm(null)
-                setError(null)
-              }}
-              className={cx(buttonClass('ghost'), 'min-h-11 px-3')}
-            >
-              取消
-            </button>
-          </div>
-        </div>
-      )}
-      <p className="m-0 mt-2 text-xs text-muted-foreground">
-        上传空间：已用 {fmtSpace(band.storageUsed)} / {fmtSpace(band.limits.storageBytes)}（自己上传的谱和排练录音）
-      </p>
-    </section>
-  )
-}
-
-/** 乐队 page: the band's name and members, the ordered setlist, and adding songs from the library. */
+/** 乐队 page: the rehearsal on top, then 歌单 / 成员 / 设置, with 最近动态 and 排练记录 beside. */
 export function BandPage() {
   const { state, error, reload } = useBand()
   const me = useMe()
   const browse = me !== null && canBrowseLibrary(me)
+  const [tab, setTab] = useState<Tab>('songs')
   const [filter, setFilter] = useState<Filter>('all')
+  const [sorting, setSorting] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [renaming, setRenaming] = useState(false)
@@ -341,25 +170,21 @@ export function BandPage() {
 
   if (!state) {
     return (
-      <>
-        <PageBar title="乐队" fallback="#/" back="← 目录" />
-        <div className="max-w-[640px] py-6">
-          {error ? (
+      <div className="max-w-[640px]">
+        <TitleRow title="乐队" />
+        {error ? (
+          <div className="space-y-3">
             <Notice tone="error">{error}</Notice>
-          ) : (
-            <p className="text-sm text-muted-foreground">正在读取…</p>
-          )}
-          {error && (
-            <button
-              type="button"
-              onClick={reload}
-              className="mt-3 inline-flex min-h-11 items-center rounded-lg border border-border px-4 text-sm hover:border-foreground"
-            >
+            <button type="button" onClick={reload} className={buttonClass('outline')}>
               重试
             </button>
-          )}
-        </div>
-      </>
+          </div>
+        ) : (
+          <div className={CARD}>
+            <p className="m-0 text-sm text-muted-foreground">正在读取…</p>
+          </div>
+        )}
+      </div>
     )
   }
 
@@ -367,6 +192,8 @@ export function BandPage() {
   const memberById = new Map<string, UserInfo>(state.members.map((m) => [m.id, m]))
   const nameOf = (id: string) => memberById.get(id)?.displayName ?? '已离开的成员'
   const shown = filter === 'all' ? state.songs : state.songs.filter((s) => s.status === filter)
+  const countOf = (f: Filter) =>
+    f === 'all' ? state.songs.length : state.songs.filter((s) => s.status === f).length
 
   const move = (index: number, dir: -1 | 1) => {
     const ids = state.songs.map((s) => s.id)
@@ -390,71 +217,97 @@ export function BandPage() {
     })
   }
 
-  return (
-    <>
-      <PageBar
-        title={state.name || '乐队'}
-        back={browse ? '← 目录' : ''}
-        fallback="#/"
-        subtitle={`${state.songs.length} 首歌 · ${state.members.length} 位成员`}
-      >
-        {!renaming && manager && (
-          <button
-            type="button"
-            onClick={startRename}
-            className="inline-flex min-h-11 items-center rounded-lg border border-border px-3.5 text-sm text-muted-foreground transition-colors hover:border-foreground hover:text-foreground"
-          >
-            改名
-          </button>
-        )}
-      </PageBar>
+  const focusAdd = () => {
+    const input = document.getElementById('band-add-search')
+    input?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    input?.focus({ preventScroll: true })
+  }
 
-      {renaming && (
-        <form
-          className="flex max-w-[640px] flex-wrap items-center gap-2 pt-4"
-          onSubmit={(e) => {
-            e.preventDefault()
-            saveName()
-          }}
-        >
-          <label className="sr-only" htmlFor="band-name">
-            乐队名称
-          </label>
-          <input
-            id="band-name"
-            value={nameDraft}
-            maxLength={40}
-            autoFocus
-            onChange={(e) => setNameDraft(e.target.value)}
-            className="h-11 min-w-0 flex-1 basis-48 rounded-lg border border-border bg-transparent px-3 text-base text-foreground focus:border-primary"
-          />
-          <button
-            type="submit"
-            disabled={!nameDraft.trim() || busy === 'name'}
-            className="inline-flex min-h-11 items-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary-strong disabled:opacity-50"
-          >
-            保存
-          </button>
-          <button
-            type="button"
-            onClick={() => setRenaming(false)}
-            className="inline-flex min-h-11 items-center rounded-lg px-4 text-sm text-muted-foreground hover:text-foreground"
-          >
-            取消
-          </button>
-        </form>
+  const songsTab = (
+    <>
+      {state.songs.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <div role="group" aria-label="状态筛选" className="flex min-w-0 flex-1 flex-wrap gap-1.5">
+            {FILTERS.map(([f, label]) => (
+              <button
+                key={f}
+                type="button"
+                aria-pressed={filter === f}
+                onClick={() => setFilter(f)}
+                className={chipClass(filter === f)}
+              >
+                {label}
+                <span className="mono ml-1.5 text-[11px] opacity-70">{countOf(f)}</span>
+              </button>
+            ))}
+          </div>
+          <span className="flex gap-1.5">
+            {state.songs.length > 1 && (
+              <button
+                type="button"
+                aria-pressed={sorting}
+                onClick={() => setSorting((v) => !v)}
+                className={cx(SMALL_BUTTON, sorting && 'border-primary text-primary')}
+              >
+                {sorting ? '完成' : '排序'}
+              </button>
+            )}
+            {browse && (
+              <button type="button" onClick={focusAdd} className={SMALL_BUTTON}>
+                ＋ 添加歌曲
+              </button>
+            )}
+          </span>
+        </div>
       )}
 
-      {me && me.bands.length > 1 && <BandSwitcher bands={me.bands} current={state.id} />}
+      {state.songs.length === 0 ? (
+        <Notice>
+          {browse
+            ? '歌单还是空的。在下面「添加歌曲」里搜索谱子，选一个版本加入，乐队成员就能一起排练它。每首歌可以记录状态、分配声部、设定排练速度和备注。'
+            : '歌单还是空的。等管理员或能看谱库的成员把歌加进来，这里就会出现。'}
+        </Notice>
+      ) : shown.length === 0 ? (
+        <div className="pt-3">
+          <Notice>这个状态下还没有歌。</Notice>
+        </div>
+      ) : (
+        <ol aria-label="排练歌单" className="m-0 flex list-none flex-col gap-2.5 p-0 pt-3">
+          {shown.map((song) => {
+            const index = state.songs.indexOf(song)
+            return (
+              <SongCard
+                key={song.id}
+                index={index}
+                total={state.songs.length}
+                song={song}
+                progress={state.progress[song.id] ?? []}
+                meId={me?.id ?? null}
+                nameOf={nameOf}
+                busy={busy !== null}
+                sorting={sorting}
+                onStatus={() => cycleStatus(song)}
+                onMove={(dir) => move(index, dir)}
+              />
+            )
+          })}
+        </ol>
+      )}
 
-      <RehearsalSection band={state} meId={me?.id ?? null} manager={manager} />
-      <SessionsSection sessions={state.sessions} />
-      <ActivitySection activity={state.activity} songs={state.songs} nameOf={nameOf} />
+      {/* Picking songs needs the library; members who only see the band cannot search it. */}
+      {browse && (
+        <AddSongs inSetlist={new Set(state.songs.map((s) => s.path))} busy={busy} run={run} />
+      )}
 
+      <OwnScores used={new Set(state.songs.flatMap((s) => (s.uploadId ? [s.uploadId] : [])))} />
+    </>
+  )
+
+  const membersTab = (
+    <>
       <MembersSection band={state} meId={me?.id ?? null} manager={manager} daily={daily} />
-
       {manager && (
-        <div className="max-w-[640px] pt-8">
+        <div className="pt-8">
           <InvitesPanel
             key={state.id}
             title="邀请成员"
@@ -464,851 +317,119 @@ export function BandPage() {
           />
         </div>
       )}
-
-      {/* setlist */}
-      <section aria-labelledby="band-setlist" className="max-w-[640px] pt-8">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <h2 id="band-setlist" className="label m-0">
-            排练歌单
-          </h2>
-          {state.songs.length > 0 && (
-            <Seg<Filter> label="状态筛选" value={filter} onChange={setFilter} options={FILTERS} />
-          )}
-        </div>
-
-        {notice && (
-          <div className="pt-3">
-            <Notice tone="error">{notice}</Notice>
-          </div>
-        )}
-
-        {state.songs.length === 0 ? (
-          <div className="pt-3">
-            <Notice>
-              {browse
-                ? '歌单还是空的。在下面「添加歌曲」里搜索谱子，选一个版本加入，乐队成员就能一起排练它。每首歌可以记录状态、分配声部、设定排练速度和备注。'
-                : '歌单还是空的。等管理员或能看谱库的成员把歌加进来，这里就会出现。'}
-            </Notice>
-          </div>
-        ) : shown.length === 0 ? (
-          <div className="pt-3">
-            <Notice>这个状态下还没有歌。</Notice>
-          </div>
-        ) : (
-          <ol className="m-0 list-none p-0 pt-2">
-            {shown.map((song) => {
-              const index = state.songs.indexOf(song)
-              return (
-                <SetlistRow
-                  key={song.id}
-                  index={index}
-                  total={state.songs.length}
-                  song={song}
-                  progress={state.progress[song.id] ?? []}
-                  nameOf={nameOf}
-                  busy={busy !== null}
-                  onStatus={() => cycleStatus(song)}
-                  onMove={(dir) => move(index, dir)}
-                />
-              )
-            })}
-          </ol>
-        )}
-      </section>
-
-      {/* 自己上传的谱: a new uploaded song, and uploads not on the setlist yet. */}
-      <section aria-labelledby="band-upload" className="max-w-[640px] pt-10">
-        <h2 id="band-upload" className="label m-0">
-          自己的谱
-        </h2>
-        <div className="pt-3">
-          <Link href={hrefUpload()} className={buttonClass()}>
-            新建歌曲（上传自己的谱）
-          </Link>
-        </div>
-        <p className="m-0 pt-2 text-xs text-muted-foreground">
-          谱库里的谱都不合适时，自己上传吉他、贝斯、鼓等各个声部的谱
-        </p>
-        <UnlistedUploads
-          used={new Set(state.songs.flatMap((s) => (s.uploadId ? [s.uploadId] : [])))}
-        />
-      </section>
-
-      {/* Picking songs needs the library; members who only see the band cannot search it. */}
-      {browse && (
-        <AddSongs inSetlist={new Set(state.songs.map((s) => s.path))} busy={busy} run={run} />
-      )}
     </>
   )
-}
 
-/** How many 动态 rows show before 「看更多」. */
-const ACTIVITY_SHOWN = 8
-
-/** 最近动态: practice, 小节标记 and rehearsals of the band, written by the server (nobody types it). */
-function ActivitySection({
-  activity,
-  songs,
-  nameOf,
-}: {
-  activity: BandActivity[] | undefined
-  songs: BandSong[]
-  nameOf: (id: string) => string
-}) {
-  const [all, setAll] = useState(false)
-  // A server from before the 动态 sends no list.
-  const list = activity ?? []
-  if (list.length === 0) return null
-  const shown = all ? list : list.slice(0, ACTIVITY_SHOWN)
-  const titleOf = (id: string) => songs.find((s) => s.id === id)?.title || '未识别的曲名'
-  const now = Date.now()
-  return (
-    <section aria-labelledby="band-activity" className="max-w-[640px] pt-8">
-      <h2 id="band-activity" className="label m-0">
-        最近动态
-      </h2>
-      <ul className="m-0 flex list-none flex-col gap-2 p-0 pt-3 text-sm">
-        {shown.map((item, i) => {
-          const line = activityText(item, { userName: nameOf, songTitle: titleOf })
-          return (
-            <li key={`${item.type}:${item.at}:${i}`} className="flex flex-wrap items-baseline gap-x-2">
-              {line.songId ? (
-                <Link
-                  href={hrefBandSong(line.songId)}
-                  className="break-words transition-colors hover:text-primary"
-                >
-                  {line.text}
-                </Link>
-              ) : (
-                <span className="break-words">{line.text}</span>
-              )}
-              <span className="text-xs text-muted-foreground">{relativeTime(item.at, now)}</span>
-            </li>
-          )
-        })}
-      </ul>
-      {list.length > ACTIVITY_SHOWN && (
-        <button
-          type="button"
-          className="mt-3 text-sm text-muted-foreground underline underline-offset-4"
-          onClick={() => setAll((v) => !v)}
-        >
-          {all ? '收起' : '看更多'}
-        </button>
-      )}
-    </section>
-  )
-}
-
-/** 排练记录: what the last rehearsals did, written down by the server (nobody types it). */
-function SessionsSection({ sessions }: { sessions: RehearsalSession[] }) {
-  const [all, setAll] = useState(false)
-  if (sessions.length === 0) return null
-  const shown = all ? sessions : sessions.slice(0, 2)
-  const minutes = (ms: number) => {
-    const m = Math.round(ms / 60000)
-    return m < 1 ? '不到 1 分钟' : `${m} 分钟`
-  }
-  const day = (at: number) => {
-    const d = new Date(at)
-    return `${d.getMonth() + 1} 月 ${d.getDate()} 日`
-  }
-  return (
-    <section aria-labelledby="band-sessions" className="max-w-[640px] pt-8">
-      <h2 id="band-sessions" className="label m-0">
-        排练记录
-      </h2>
-      <p className="m-0 pt-1 text-xs text-muted-foreground">每次排练结束后自动生成。</p>
-      <ul className="m-0 flex list-none flex-col gap-4 p-0 pt-3">
-        {shown.map((s) => (
-          <li key={s.startedAt}>
-            <div className="text-sm font-medium">
-              {day(s.startedAt)} · 排了 {s.songs.length} 首 · 共 {minutes(s.endedAt - s.startedAt)}
-            </div>
-            <ul className="m-0 flex list-none flex-col gap-1 p-0 pt-1.5 text-sm">
-              {s.songs.map((x) => (
-                <li key={x.songId} className="flex flex-wrap items-baseline gap-x-2">
-                  <span>{x.title}</span>
-                  <span className="text-muted-foreground">
-                    {x.starts} 遍 · {minutes(x.playMs)}
-                  </span>
-                  {x.hotBars.length > 0 && (
-                    <span className="text-muted-foreground">
-                      难点：
-                      {x.hotBars.map((h) => `第 ${h.bar} 小节（重来 ${h.count} 次）`).join('、')}
-                    </span>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </li>
-        ))}
-      </ul>
-      {sessions.length > 2 && (
-        <button
-          type="button"
-          className="mt-3 text-sm text-muted-foreground underline underline-offset-4"
-          onClick={() => setAll((v) => !v)}
-        >
-          {all ? '只看最近两次' : `看全部 ${sessions.length} 次`}
-        </button>
-      )}
-    </section>
-  )
-}
-
-/**
- * 排练: today's setlist (edited while no rehearsal runs), starting the rehearsal, and
- * joining or ending the one that runs. Live through the rehearsal stream.
- */
-function RehearsalSection({
-  band,
-  meId,
-  manager,
-}: {
-  band: BandState
-  meId: string | null
-  /** The band's leader (队长) or an admin: only they start a rehearsal. */
-  manager: boolean
-}) {
-  const rh = useRehearsal()
-  const [busy, setBusy] = useState<string | null>(null)
-  const [notice, setNotice] = useState<string | null>(null)
-  const [addId, setAddId] = useState('')
-
-  const songById = new Map<string, BandSong>(band.songs.map((s) => [s.id, s]))
-  // Unknown ids (songs since removed from the band) are left out of the list.
-  const setlist = band.rehearsalSetlist
-    .map((id) => songById.get(id))
-    .filter((s): s is BandSong => s !== undefined)
-  const ids = setlist.map((s) => s.id)
-  const inSetlist = new Set(ids)
-  const addable = band.songs.filter((s) => !inSetlist.has(s.id))
-  const nameOf = (id: string) =>
-    band.members.find((m) => m.id === id)?.displayName ?? '已离开的成员'
-
-  const state = rh.state
-  const active = state?.active === true
-  const currentId = state?.songId ?? null
-  const current = currentId ? (songById.get(currentId) ?? null) : null
-  const position = currentId ? band.rehearsalSetlist.indexOf(currentId) : -1
-  const speaker = state?.speakerDevice
-    ? state.devices.find((d) => d.deviceId === state.speakerDevice)
-    : undefined
-  const leaderPresent = state ? state.devices.some((d) => d.userId === state.leaderId) : false
-  const canEnd = active && (state?.leaderId === meId || !leaderPresent)
-  const present = state
-    ? [...new Set(state.devices.map((d) => d.userId))].map(nameOf).join('、')
-    : ''
-
-  const saveSetlist = async (next: string[], key: string) => {
-    if (busy) return
-    setBusy(key)
-    setNotice(null)
-    try {
-      await setSetlist(next)
-    } catch (e) {
-      setNotice(errorText(e))
-    } finally {
-      setBusy(null)
-    }
-  }
-
-  const start = async () => {
-    const first = setlist[0]
-    if (busy || !first) return
-    setBusy('start')
-    setNotice(null)
-    try {
-      await rh.send({ type: 'start', setlist: ids })
-      await openInRehearsal(first)
-    } catch (e) {
-      setNotice(errorText(e))
-    } finally {
-      setBusy(null)
-    }
-  }
-
-  const join = async () => {
-    if (!current) return
-    setNotice(null)
-    try {
-      await openInRehearsal(current)
-    } catch (e) {
-      setNotice(errorText(e))
-    }
-  }
-
-  const end = async () => {
-    if (busy || !window.confirm('结束这次排练？')) return
-    setBusy('end')
-    setNotice(null)
-    try {
-      await rh.send({ type: 'end' })
-    } catch (e) {
-      setNotice(errorText(e))
-    } finally {
-      setBusy(null)
-    }
-  }
-
-  const move = (index: number, dir: -1 | 1) =>
-    void saveSetlist(swapped(ids, index, index + dir), 'list')
-  const remove = (index: number) =>
-    void saveSetlist(
-      ids.filter((_, i) => i !== index),
-      'list',
-    )
-  const addOne = (id: string) => {
-    setAddId('')
-    if (id) void saveSetlist([...ids, id], 'list')
-  }
-
-  const message = notice ?? rh.error
-  const status = !rh.connected && <p className="m-0 text-xs text-muted-foreground">实时连接中…</p>
-
-  return (
-    <section aria-labelledby="band-rehearsal" className="max-w-[640px] pt-8">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <h2 id="band-rehearsal" className="label m-0">
-          排练
-        </h2>
-        {status}
-      </div>
-
-      {message && (
-        <div className="pt-3">
-          <Notice tone="error">{message}</Notice>
-        </div>
-      )}
-
-      {active ? (
-        <div className="pt-3">
-          <div className="rounded-2xl border border-primary bg-card p-4">
-            <p className="m-0 text-xs font-medium text-primary">排练进行中</p>
-            <p className="m-0 mt-1 break-words text-lg font-bold leading-snug">
-              {current ? (
-                <>
-                  {position >= 0 && `第 ${position + 1}/${band.rehearsalSetlist.length} 首`}
-                  {position >= 0 ? ' ' : ''}《{current.title || '未识别的曲名'}》
-                </>
-              ) : currentId ? (
-                '（这首歌已从乐队移除）'
-              ) : (
-                '还没有选定曲目'
-              )}
-            </p>
-            <dl className="m-0 mt-3 grid gap-1.5 text-sm">
-              <div className="flex flex-wrap gap-x-2">
-                <dt className="text-muted-foreground">指挥：</dt>
-                <dd className="m-0">{state?.leaderId ? nameOf(state.leaderId) : '暂无指挥'}</dd>
-              </div>
-              <div className="flex flex-wrap gap-x-2">
-                <dt className="text-muted-foreground">音箱：</dt>
-                <dd className="m-0">
-                  {speaker ? `${nameOf(speaker.userId)}（${speaker.label}）` : '还没有设备当音箱'}
-                </dd>
-              </div>
-              <div className="flex flex-wrap gap-x-2">
-                <dt className="text-muted-foreground">在场：</dt>
-                <dd className="m-0 break-words">{present || '—'}</dd>
-              </div>
-            </dl>
-
-            <div className="mt-4 flex flex-wrap items-center gap-2">
+  const settingsTab = (
+    <div className="space-y-6">
+      {manager && (
+        <section aria-labelledby="band-name-title">
+          <h2 id="band-name-title" className={cx(SECTION_TITLE, 'mb-2.5')}>
+            乐队名称
+          </h2>
+          {renaming ? (
+            <form
+              className={cx(CARD, 'flex flex-wrap items-center gap-2')}
+              onSubmit={(e) => {
+                e.preventDefault()
+                saveName()
+              }}
+            >
+              <label className="sr-only" htmlFor="band-name">
+                乐队名称
+              </label>
+              <input
+                id="band-name"
+                value={nameDraft}
+                maxLength={40}
+                autoFocus
+                onChange={(e) => setNameDraft(e.target.value)}
+                className={cx(INPUT, 'flex-1 basis-48 bg-background')}
+              />
               <button
-                type="button"
-                onClick={() => void join()}
-                disabled={!current || busy !== null}
-                className="inline-flex min-h-12 flex-1 items-center justify-center rounded-lg bg-primary px-5 text-base font-medium text-primary-foreground hover:bg-primary-strong disabled:opacity-50"
+                type="submit"
+                disabled={!nameDraft.trim() || busy === 'name'}
+                className={buttonClass('primary')}
               >
-                加入排练
+                保存
               </button>
-              {canEnd && (
-                <button
-                  type="button"
-                  onClick={() => void end()}
-                  disabled={busy !== null}
-                  className="inline-flex min-h-11 items-center rounded-lg px-4 text-sm text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
-                >
-                  {busy === 'end' ? '结束中…' : '结束排练'}
-                </button>
-              )}
+              <button type="button" onClick={() => setRenaming(false)} className={buttonClass('ghost')}>
+                取消
+              </button>
+            </form>
+          ) : (
+            <div className={cx(LIST)}>
+              <button type="button" onClick={startRename} className={cx(LIST_ROW, 'w-full text-left')}>
+                <span className="min-w-0 flex-1">
+                  <b className="block truncate font-bold">{state.name || '乐队'}</b>
+                  <span className="block text-[13px] text-muted-foreground">点一下改名</span>
+                </span>
+                <span className="shrink-0 text-sm text-primary">改名</span>
+              </button>
             </div>
-          </div>
-
-          <h3 className="m-0 pt-5 text-sm font-medium text-muted-foreground">今天的排练歌单</h3>
-          {setlist.length === 0 ? (
-            <p className="m-0 pt-2 text-sm text-muted-foreground">今天还没有选歌。</p>
-          ) : (
-            <ol className="m-0 list-none p-0 pt-2">
-              {setlist.map((song, i) => (
-                <li
-                  key={song.id}
-                  className="flex items-center gap-2.5 border-t border-border py-2.5 first:border-t-0"
-                >
-                  <span className="mono w-6 shrink-0 text-right text-sm font-semibold text-muted-foreground">
-                    {i + 1}.
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="m-0 break-words font-medium leading-snug">
-                      {song.title || '未识别的曲名'}
-                    </p>
-                    {song.artist && (
-                      <p className="m-0 truncate text-xs text-muted-foreground">{song.artist}</p>
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ol>
           )}
-        </div>
-      ) : (
-        <div className="pt-3">
-          <h3 className="m-0 text-sm font-medium">今天排练哪些歌</h3>
-          <p className="m-0 mt-2 text-xs leading-relaxed text-muted-foreground">
-            排练时，一台设备当「音箱」接排练室的音箱，负责放缺席成员的声部（比如缺鼓手就放鼓）；其他人的手机/平板不出声，只看自己的谱，光标和翻页跟着走。
-          </p>
-
-          {setlist.length === 0 ? (
-            <div className="pt-3">
-              <Notice>
-                {band.songs.length > 0
-                  ? '还没有选歌。可以全部加入，或从下面挑。'
-                  : '歌单还是空的，先在下面添加歌曲。'}
-              </Notice>
-            </div>
-          ) : (
-            <ol className="m-0 list-none p-0 pt-2">
-              {setlist.map((song, i) => (
-                <li
-                  key={song.id}
-                  className="flex items-center gap-2.5 border-t border-border py-2.5 first:border-t-0"
-                >
-                  <span className="mono w-6 shrink-0 text-right text-sm font-semibold text-muted-foreground">
-                    {i + 1}.
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="m-0 break-words font-medium leading-snug">
-                      {song.title || '未识别的曲名'}
-                    </p>
-                    {song.artist && (
-                      <p className="m-0 truncate text-xs text-muted-foreground">{song.artist}</p>
-                    )}
-                  </div>
-                  <div className="flex shrink-0 gap-1.5">
-                    <button
-                      type="button"
-                      aria-label={`上移：${song.title}`}
-                      title="上移"
-                      disabled={busy !== null || i <= 0}
-                      onClick={() => move(i, -1)}
-                      className={ICON_BUTTON}
-                    >
-                      <span aria-hidden>↑</span>
-                    </button>
-                    <button
-                      type="button"
-                      aria-label={`下移：${song.title}`}
-                      title="下移"
-                      disabled={busy !== null || i >= setlist.length - 1}
-                      onClick={() => move(i, 1)}
-                      className={ICON_BUTTON}
-                    >
-                      <span aria-hidden>↓</span>
-                    </button>
-                    <button
-                      type="button"
-                      aria-label={`从今天的排练中移除：${song.title}`}
-                      title="移除"
-                      disabled={busy !== null}
-                      onClick={() => remove(i)}
-                      className={ICON_BUTTON}
-                    >
-                      <span aria-hidden>✕</span>
-                    </button>
-                  </div>
-                </li>
-              ))}
-            </ol>
-          )}
-
-          {setlist.length === 0 && band.songs.length > 0 ? (
-            <button
-              type="button"
-              onClick={() =>
-                void saveSetlist(
-                  band.songs.map((s) => s.id),
-                  'all',
-                )
-              }
-              disabled={busy !== null}
-              className="mt-3 inline-flex min-h-11 items-center rounded-lg border border-border px-4 text-sm transition-colors hover:border-primary hover:text-primary disabled:opacity-50"
-            >
-              {busy === 'all' ? '加入中…' : '全部加入'}
-            </button>
-          ) : (
-            addable.length > 0 && (
-              <div className="pt-3">
-                <label className="sr-only" htmlFor="rehearsal-add">
-                  加一首歌到今天的排练
-                </label>
-                <select
-                  id="rehearsal-add"
-                  value={addId}
-                  disabled={busy !== null}
-                  onChange={(e) => addOne(e.target.value)}
-                  className="h-11 w-full rounded-lg border border-border bg-card px-3 text-base text-foreground focus:border-primary disabled:opacity-50"
-                >
-                  <option value="">加一首…</option>
-                  {addable.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.title || '未识别的曲名'}
-                      {s.artist ? ` · ${s.artist}` : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )
-          )}
-
-          <div className="pt-4">
-            <button
-              type="button"
-              onClick={() => void start()}
-              disabled={!manager || setlist.length === 0 || busy !== null}
-              className="inline-flex min-h-12 w-full items-center justify-center rounded-lg bg-primary px-5 text-base font-medium text-primary-foreground hover:bg-primary-strong disabled:opacity-50"
-            >
-              {busy === 'start' ? '开始中…' : '开始排练'}
-            </button>
-            {!manager && (
-              <p className="m-0 pt-2 text-xs text-muted-foreground">
-                排练由队长开始。开始后这里会出现「加入排练」。
-              </p>
-            )}
-          </div>
-        </div>
+        </section>
       )}
-    </section>
-  )
-}
 
-function SetlistRow({
-  song,
-  index,
-  total,
-  progress,
-  nameOf,
-  busy,
-  onStatus,
-  onMove,
-}: {
-  song: BandSong
-  index: number
-  total: number
-  progress: MemberProgress[]
-  nameOf: (id: string) => string
-  busy: boolean
-  onStatus: () => void
-  onMove: (dir: -1 | 1) => void
-}) {
-  const practice =
-    progress.length === 0
-      ? '还没有练习记录'
-      : progress
-          .map(
-            (p) =>
-              `${nameOf(p.userId)} ${fmtDuration(p.totalSeconds)}${p.maxSpeedPct ? ` · ${p.maxSpeedPct}%` : ''}`,
-          )
-          .join(' · ')
-
-  const counts = new Map<string, number>()
-  for (const userId of Object.values(song.parts)) counts.set(userId, (counts.get(userId) ?? 0) + 1)
-  const parts =
-    counts.size === 0
-      ? '声部未分配'
-      : [...counts].map(([userId, n]) => `${nameOf(userId)} ${n} 轨`).join(' · ')
-
-  return (
-    <li className="flex items-start gap-2.5 border-t border-border py-3 first:border-t-0">
-      <span className="mono w-7 shrink-0 pt-1 text-right text-base font-semibold text-muted-foreground">
-        {index + 1}.
-      </span>
-      <div className="min-w-0 flex-1">
-        <Link
-          href={hrefBandSong(song.id)}
-          className="block break-words text-lg font-bold leading-snug transition-colors hover:text-primary"
-        >
-          {song.title || '未识别的曲名'}
-        </Link>
-        <p className="truncate text-sm text-muted-foreground">{song.artist || ' '}</p>
-        <p className="mono mt-1 break-words text-[11px] leading-relaxed text-muted-foreground">
-          {practice}
-        </p>
-        <p className="mono break-words text-[11px] leading-relaxed text-muted-foreground">
-          声部：{parts}
-        </p>
-      </div>
-      <div className="flex shrink-0 flex-col items-end gap-1.5">
-        <button
-          type="button"
-          onClick={onStatus}
-          disabled={busy}
-          aria-label={`状态：${STATUS_LABELS[song.status]}，点按切换`}
-          className={cx(
-            'inline-flex min-h-11 items-center rounded-full border px-3 text-[13px] transition-colors disabled:opacity-50',
-            STATUS_CLASS[song.status],
-          )}
-        >
-          {STATUS_LABELS[song.status]}
-        </button>
-        <div className="flex gap-1.5">
-          <button
-            type="button"
-            aria-label="上移"
-            title="上移"
-            disabled={busy || index <= 0}
-            onClick={() => onMove(-1)}
-            className={ICON_BUTTON}
-          >
-            <span aria-hidden>↑</span>
-          </button>
-          <button
-            type="button"
-            aria-label="下移"
-            title="下移"
-            disabled={busy || index >= total - 1}
-            onClick={() => onMove(1)}
-            className={ICON_BUTTON}
-          >
-            <span aria-hidden>↓</span>
-          </button>
+      <section aria-labelledby="band-other-title">
+        <h2 id="band-other-title" className={cx(SECTION_TITLE, 'mb-2.5')}>
+          其他乐队
+        </h2>
+        <div className={LIST}>
+          <Link href="#/invite" className={LIST_ROW}>
+            <span className="min-w-0 flex-1">
+              <b className="block font-bold">加入其他乐队</b>
+              <span className="block text-[13px] text-muted-foreground">填写另一个乐队的邀请码</span>
+            </span>
+            <span aria-hidden className="text-muted-foreground">
+              ›
+            </span>
+          </Link>
         </div>
-      </div>
-    </li>
-  )
-}
+      </section>
 
-/** Uploaded songs that no band song uses yet (hidden when there are none). */
-function UnlistedUploads({ used }: { used: Set<string> }) {
-  const [list, setList] = useState<UploadSong[]>([])
-
-  useEffect(() => {
-    let alive = true
-    api.uploads().then(
-      (all) => {
-        if (alive) setList(all)
-      },
-      () => undefined,
-    )
-    return () => {
-      alive = false
-    }
-  }, [])
-
-  const unlisted = list.filter((u) => !used.has(u.id))
-  if (unlisted.length === 0) return null
-  return (
-    <div className="pt-6">
-      <h3 className="label m-0">自己上传、还没加入歌单的歌</h3>
-      <ul className="m-0 mt-2.5 list-none divide-y divide-border border-y border-border p-0">
-        {unlisted.map((u) => (
-          <li key={u.id}>
-            <Link
-              href={hrefUpload({ id: u.id })}
-              className="flex min-h-11 items-center gap-3 py-2 text-sm hover:text-primary"
-            >
-              <span className="min-w-0 flex-1 truncate font-medium">{u.title || '未命名的歌'}</span>
-              {u.artist && (
-                <span className="shrink-0 text-xs text-muted-foreground">{u.artist}</span>
-              )}
-              <span className="mono shrink-0 text-xs text-muted-foreground">
-                {u.files.length} 个文件
-              </span>
-            </Link>
-          </li>
-        ))}
-      </ul>
+      {!manager && (
+        <p className="m-0 text-[13px] text-muted-foreground">乐队名称等设置只有队长可以修改。</p>
+      )}
     </div>
   )
-}
 
-/** Search the library for score files and add one version of a song to the setlist. */
-function AddSongs({
-  inSetlist,
-  busy,
-  run,
-}: {
-  inSetlist: Set<string>
-  busy: string | null
-  run: (key: string, job: () => Promise<void>) => Promise<void>
-}) {
-  const [text, setText] = useState('')
-  const [query, setQuery] = useState('')
-  const [found, setFound] = useState<ScoreSearchResult | null>(null)
-  const [searching, setSearching] = useState(false)
-  const [searchError, setSearchError] = useState<string | null>(null)
-
-  // Waits a moment after the last key, so typing does not search every letter.
-  useEffect(() => {
-    const t = window.setTimeout(() => setQuery(text.trim()), 250)
-    return () => window.clearTimeout(t)
-  }, [text])
-
-  useEffect(() => {
-    if (!query) {
-      setFound(null)
-      setSearchError(null)
-      setSearching(false)
-      return
-    }
-    const ac = new AbortController()
-    setSearching(true)
-    setSearchError(null)
-    api
-      .search(query, {}, ac.signal)
-      .then(
-        (r) => {
-          if (!ac.signal.aborted) setFound(r)
-        },
-        (e: unknown) => {
-          if (!ac.signal.aborted) setSearchError(errorText(e))
-        },
-      )
-      .finally(() => {
-        if (!ac.signal.aborted) setSearching(false)
-      })
-    return () => ac.abort()
-  }, [query])
-
-  // Only songs with at least one score-format file (GP / MusicXML) can be rehearsed.
-  const songs = useMemo(
-    () =>
-      (found?.songs ?? [])
-        .map(({ song, artistName }) => ({
-          song,
-          artistName,
-          versions: song.versions.filter((v) => v.file.format === 'score'),
-        }))
-        .filter((x) => x.versions.length > 0),
-    [found],
-  )
-
-  const add = (title: string, artist: string, v: ScoreVersion) =>
-    void run(`add:${v.file.path}`, () => addSong({ path: v.file.path, title, artist }))
+  const hasSide = (state.activity?.length ?? 0) > 0 || state.sessions.length > 0
 
   return (
-    <section aria-labelledby="band-add" className="max-w-[640px] pb-24 pt-10">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <h2 id="band-add" className="label m-0">
-          添加歌曲
-        </h2>
-        <Link
-          href={hrefEnsembles()}
-          className="inline-flex min-h-11 items-center text-sm text-primary hover:underline"
-        >
-          找乐队谱 →
-        </Link>
+    <div className="max-w-[1080px] pb-20">
+      <TitleRow
+        title={state.name || '乐队'}
+        subtitle={`${state.songs.length} 首歌 · ${state.members.length} 位成员`}
+      >
+        {me && me.bands.length > 1 && <BandSwitcher bands={me.bands} current={state.id} />}
+      </TitleRow>
+
+      <div
+        className={cx(
+          'grid gap-5',
+          hasSide && 'min-[1100px]:grid-cols-[minmax(0,1fr)_300px] min-[1100px]:items-start',
+        )}
+      >
+        <div className="flex min-w-0 flex-col gap-[18px]">
+          <RehearsalHero band={state} meId={me?.id ?? null} manager={manager} />
+
+          <Tabs<Tab> label="乐队页面" value={tab} options={TABS} onChange={setTab} />
+
+          {notice && <Notice tone="error">{notice}</Notice>}
+
+          <div role="tabpanel" aria-label={TABS.find(([t]) => t === tab)?.[1]} className="min-w-0">
+            {tab === 'songs' ? songsTab : tab === 'members' ? membersTab : settingsTab}
+          </div>
+        </div>
+
+        {hasSide && (
+          <aside aria-label="乐队动态" className="flex min-w-0 flex-col gap-3.5">
+            <ActivitySection activity={state.activity} songs={state.songs} nameOf={nameOf} />
+            <SessionsSection sessions={state.sessions} />
+          </aside>
+        )}
       </div>
-
-      <label className="relative mt-3 block">
-        <span className="sr-only">搜索谱库</span>
-        <input
-          type="search"
-          enterKeyHint="search"
-          autoComplete="off"
-          autoCapitalize="none"
-          spellCheck={false}
-          placeholder="搜索歌名或歌手，选一个版本加入歌单"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          className="h-12 w-full rounded-[14px] border-0 bg-card px-4 text-base text-foreground outline-none ring-inset transition-shadow placeholder:text-muted-foreground focus:ring-2 focus:ring-primary [&::-webkit-search-cancel-button]:appearance-none"
-        />
-      </label>
-
-      {!query && (
-        <p className="pt-3 text-xs text-muted-foreground">输入歌名、歌手或拼音首字母开始搜索。</p>
-      )}
-      {searching && <p className="pt-3 text-sm text-muted-foreground">正在搜索…</p>}
-      {searchError && (
-        <div className="pt-3">
-          <Notice tone="error">{searchError}</Notice>
-        </div>
-      )}
-      {query && !searching && found && songs.length === 0 && !searchError && (
-        <div className="pt-3">
-          <Notice>没有找到带乐谱文件（GP / MusicXML）的歌曲。</Notice>
-        </div>
-      )}
-
-      {songs.length > 0 && (
-        <ul className="m-0 list-none p-0 pt-3">
-          {songs.map(({ song, artistName, versions }) => {
-            const title = song.unknownTitle ? (versions[0]?.label ?? song.title) : song.title
-            return (
-              <li key={song.id} className="border-t border-border py-3 first:border-t-0">
-                <p className="m-0 break-words text-base font-bold">
-                  {title || '未识别的曲名'}
-                  <span className="ml-2 text-sm font-normal text-muted-foreground">
-                    {artistName}
-                  </span>
-                </p>
-                <ul className="m-0 mt-2 list-none space-y-1.5 p-0">
-                  {versions.map((v) => {
-                    const added = inSetlist.has(v.file.path)
-                    const key = `add:${v.file.path}`
-                    return (
-                      <li key={v.file.path}>
-                        <div className="flex items-center gap-2">
-                          <FormatBadge format={v.file.format} />
-                          <span className="min-w-0 flex-1 truncate text-sm">
-                            {v.label}
-                            {v.tags.length > 0 && (
-                              <span className="ml-2 text-xs text-muted-foreground">
-                                {v.tags.join(' · ')}
-                              </span>
-                            )}
-                          </span>
-                          {added ? (
-                            <span className="shrink-0 text-xs text-muted-foreground">已在歌单</span>
-                          ) : (
-                            <button
-                              type="button"
-                              disabled={busy !== null}
-                              onClick={() => add(title, artistName, v)}
-                              className="inline-flex min-h-11 shrink-0 items-center rounded-lg border border-border px-3 text-sm transition-colors hover:border-primary hover:text-primary disabled:opacity-50"
-                              aria-label={busy === key ? '正在加入' : `加入歌单：${v.label}`}
-                            >
-                              {busy === key ? '加入中…' : '加入'}
-                            </button>
-                          )}
-                        </div>
-                      </li>
-                    )
-                  })}
-                </ul>
-              </li>
-            )
-          })}
-        </ul>
-      )}
-    </section>
+    </div>
   )
-}
-
-/** A member's 每日一练 position and count, as one muted line. */
-function dailyLine(p: DailyMemberProgress | undefined): string {
-  if (!p || p.startedAt === null) return '还没开始每日一练'
-  return `每日一练 第 ${todayNumber(p.startedAt, Date.now())} 天 · 完成 ${p.doneCount}`
-}
-
-/** The order with the entries at i and j swapped; the same list when either index is out of range. */
-function swapped(ids: string[], i: number, j: number): string[] {
-  const next = [...ids]
-  const a = next[i]
-  const b = next[j]
-  if (a === undefined || b === undefined) return ids
-  next[i] = b
-  next[j] = a
-  return next
 }

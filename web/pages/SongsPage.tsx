@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import type { ScoreSong, ScoreVersion } from '@/songs/scoreLibraryTypes'
 import { api, errorText } from '../lib/api'
-import { PAGE_SIZE } from '../lib/classes'
+import { cx, LIST, PAGE_SIZE } from '../lib/classes'
 import { toggleFavorite, useFavorites } from '../lib/favorites'
 import { useLibrary } from '../lib/libraryContext'
 import { hrefGroup } from '../lib/route'
@@ -23,7 +23,7 @@ export function SongsPage({ artist }: { artist: { id: string; name: string } }) 
   useRestoreScroll(state.status === 'ready')
   const name = artist.name || '歌手'
 
-  // The group this artist sits in (the longest matching group id), for 「← 男歌手」.
+  // The group this artist sits in (the longest matching group id), for 「‹ 男歌手」.
   const group = useMemo(
     () =>
       (info?.categories.flatMap((c) => c.groups) ?? [])
@@ -31,7 +31,7 @@ export function SongsPage({ artist }: { artist: { id: string; name: string } }) 
         .sort((a, b) => b.id.length - a.id.length)[0],
     [info, artist.id],
   )
-  const back = group ? `← ${group.name}` : '← 返回'
+  const back = group ? `‹ ${group.name}` : '‹ 谱库'
   const backTo = group ? hrefGroup(group) : '#/'
 
   const starred = useMemo(() => new Set(favorites.map((f) => f.path)), [favorites])
@@ -98,11 +98,10 @@ export function SongsPage({ artist }: { artist: { id: string; name: string } }) 
         </div>
       ) : (
         <div className="pb-20">
-          <ul className="m-0 list-none p-0">
-            {shown.map((song, i) => (
+          <ul className={cx(LIST, 'm-0 list-none p-0')}>
+            {shown.map((song) => (
               <SongCard
                 key={song.id}
-                index={i + 1}
                 song={song}
                 artistName={name}
                 open={current === song.id}

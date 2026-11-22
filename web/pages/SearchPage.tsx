@@ -9,17 +9,18 @@ import { api, errorText, type SearchOptions } from '../lib/api'
 import { toggleFavorite, useFavorites } from '../lib/favorites'
 import { useHistoryState, useRestoreScroll } from '../lib/scrollMemory'
 import { VersionList } from '../components/SongCard'
-import { cx } from '../lib/classes'
+import { cx, LIST, PILL, SECTION_TITLE } from '../lib/classes'
 import { hrefArtist, hrefSearch, hrefViewer } from '../lib/route'
 import { useLibrary } from '../lib/libraryContext'
 import { useLoad } from '../lib/useLoad'
 import { Link } from '../components/Link'
-import { MatchTag, Notice } from '../components/ui'
+import { BackLink, FormatBadge, MatchTag, Notice } from '../components/ui'
 
 type Sort = NonNullable<SearchOptions['sort']>
 
+/** A song's head row inside its card: title over artist, count or format and a chevron on the right. */
 const ROW =
-  'grid min-h-11 grid-cols-[38px_minmax(0,1fr)_auto] items-center gap-2 rounded-lg px-1 py-3 transition-colors hover:bg-card active:bg-card min-[861px]:grid-cols-[52px_minmax(0,1fr)_auto]'
+  'flex min-h-[60px] w-full items-center gap-3 px-3.5 py-2 text-left transition-colors hover:bg-[hsl(var(--raised))]'
 
 const FORMATS: ReadonlyArray<readonly [ScoreFormat | '', string]> = [
   ['', '全部格式'],
@@ -36,9 +37,9 @@ const SORTS: ReadonlyArray<readonly [Sort, string]> = [
 ]
 
 const FILTER =
-  'h-11 min-[861px]:h-[38px] appearance-none rounded-full border-[1.5px] border-border bg-transparent pl-3.5 pr-9 text-[13px] text-foreground transition-colors focus:border-primary'
+  'h-11 min-[861px]:h-[38px] appearance-none rounded-full border border-border bg-card pl-3.5 pr-9 text-[13px] text-foreground transition-colors hover:border-foreground focus:border-primary'
 
-/** 搜索谱: one wide field, three pill filters, and the results as a numbered list. */
+/** 搜索谱: one wide field, three pill filters, and each result as a card that opens its versions. */
 export function SearchPage({ q }: { q: string }) {
   const { info, version } = useLibrary()
   const [text, setText] = useState(q)
@@ -80,10 +81,13 @@ export function SearchPage({ q }: { q: string }) {
 
   return (
     <>
-      <div className="grid grid-cols-1 items-center gap-3.5 pb-2 pt-[22px] min-[861px]:grid-cols-[auto_minmax(0,1fr)] min-[861px]:gap-7 min-[861px]:pt-9">
-        <h1 className="m-0 whitespace-nowrap font-display text-[26px] font-black leading-tight min-[861px]:text-[30px]">
-          搜索谱
-        </h1>
+      <div className="flex flex-col gap-3 pb-1 pt-3 min-[861px]:pt-5">
+        <div className="flex flex-col">
+          <BackLink label="‹ 谱库" fallback="#/" />
+          <h1 className="m-0 whitespace-nowrap font-display text-[26px] font-bold leading-tight min-[861px]:text-[30px]">
+            搜索谱
+          </h1>
+        </div>
         <label className="relative block">
           <span className="sr-only">搜索谱</span>
           <svg
@@ -112,7 +116,7 @@ export function SearchPage({ q }: { q: string }) {
             placeholder={placeholder}
             value={text}
             onChange={(e) => setText(e.target.value)}
-            className="h-[58px] w-full rounded-[14px] border-0 bg-card pl-[50px] pr-12 text-lg text-foreground outline-none ring-inset transition-shadow placeholder:text-muted-foreground focus:ring-2 focus:ring-primary [&::-webkit-search-cancel-button]:appearance-none"
+            className="h-[56px] w-full rounded-[14px] border border-border bg-card pl-[50px] pr-12 text-base text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-primary min-[861px]:text-lg [&::-webkit-search-cancel-button]:appearance-none"
           />
           {text && (
             <button
@@ -131,7 +135,7 @@ export function SearchPage({ q }: { q: string }) {
         </label>
       </div>
 
-      <div className="flex flex-wrap gap-2.5 pb-1.5 pt-4">
+      <div className="flex flex-wrap gap-2 pb-1.5 pt-3">
         <Pill
           label="格式"
           value={fmt}
@@ -212,8 +216,8 @@ function Pill({
 }
 
 /**
- * Artist chips, then the numbered song results: a song with one score opens it, one
- * with several opens its versions in place (each with ☆, 预览 and 看谱 →).
+ * Artist chips, then one card per song: a song with one score opens it, one with
+ * several opens its versions in place (each with ☆, 预览 and 看谱).
  */
 function Results({ query, data }: { query: string; data: ScoreSearchResult }) {
   const { artists, songs, moreSongs } = data
@@ -255,87 +259,72 @@ function Results({ query, data }: { query: string; data: ScoreSearchResult }) {
   return (
     <>
       {artists.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2 pb-1 pt-3">
-          <span className="pr-1 text-xs text-muted-foreground">歌手</span>
-          {artists.map((a) => (
-            <Link
-              key={a.id}
-              href={hrefArtist(a)}
-              className="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-border px-3.5 text-sm transition-colors hover:border-primary hover:text-primary"
-            >
-              {a.name}
-              <span className="mono text-[11px] text-muted-foreground">{a.files}</span>
-            </Link>
-          ))}
-        </div>
+        <section aria-label="歌手" className="pt-5">
+          <h2 className={cx(SECTION_TITLE, 'mb-2.5')}>歌手</h2>
+          <div className="flex flex-wrap gap-2">
+            {artists.map((a) => (
+              <Link
+                key={a.id}
+                href={hrefArtist(a)}
+                className="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-border bg-card px-3.5 text-sm transition-colors hover:border-primary hover:text-primary"
+              >
+                {a.name}
+                <span className="mono text-[11px] text-muted-foreground">{a.files}</span>
+              </Link>
+            ))}
+          </div>
+        </section>
       )}
 
-      {!query && <p className="px-1 pb-1 pt-3 text-xs text-muted-foreground">版本最多的谱</p>}
+      {songs.length > 0 && (
+        <h2 className={cx(SECTION_TITLE, 'mb-2.5 mt-6')}>
+          {query ? `${songs.length}${moreSongs ? '+' : ''} 首歌` : '版本最多的谱'}
+        </h2>
+      )}
 
-      <ol className="m-0 list-none p-0 pb-28 pt-2">
-        {songs.map(({ song, artistName, match }, i) => {
+      <ol className="m-0 flex list-none flex-col gap-2.5 p-0 pb-28">
+        {songs.map(({ song, artistName, match }) => {
           const best = song.versions[0]
           if (!best) return null
           const title = song.unknownTitle ? best.label : song.title
           const count = song.versions.length
-          const filled = Math.min(8, Math.ceil(count / 4))
           const body = (
             <>
-              <span className="mono pr-3.5 text-right text-base font-semibold text-muted-foreground">
-                {i + 1}.
-              </span>
-              <span className="min-w-0">
-                <span className="block break-words text-lg font-bold leading-snug">
+              <span className="min-w-0 flex-1">
+                <span className="block break-words font-bold leading-snug">
                   {title}
                   {match !== 'name' && <MatchTag match={match} />}
                 </span>
-                <span className="block truncate text-[15px] text-muted-foreground">
+                <span className="block truncate text-[13px] text-muted-foreground">
                   {artistName}
                 </span>
               </span>
-              <span className="flex items-center gap-2 pr-2">
-                {count > 1 && (
-                  <span className="mono text-xs text-muted-foreground">{count} 个谱</span>
-                )}
-                <span
-                  className="flex gap-1"
-                  role="img"
-                  aria-label={`${count} 个版本`}
-                  title={`${count} 个版本`}
-                >
-                  {Array.from({ length: 8 }, (_, k) => (
-                    <i
-                      key={k}
-                      aria-hidden
-                      className={cx(
-                        'h-1 w-1 rounded-full min-[861px]:h-[5px] min-[861px]:w-[5px]',
-                        k < filled ? 'bg-primary' : 'bg-border',
-                      )}
-                    />
-                  ))}
+              {count > 1 ? (
+                <span className={PILL} title={`${count} 个版本`}>
+                  {count} 个谱
                 </span>
-                {count > 1 && (
-                  <span
-                    aria-hidden
-                    className={cx(
-                      'text-lg text-muted-foreground transition-transform duration-200 motion-reduce:transition-none',
-                      open.has(song.id) && 'rotate-90',
-                    )}
-                  >
-                    ›
-                  </span>
+              ) : (
+                <FormatBadge format={best.file.format} />
+              )}
+              <span
+                aria-hidden
+                className={cx(
+                  'shrink-0 text-lg text-muted-foreground transition-transform duration-200 motion-reduce:transition-none',
+                  count > 1 && open.has(song.id) && 'rotate-90',
                 )}
+              >
+                ›
               </span>
             </>
           )
           return (
-            <li key={song.id}>
+            <li key={song.id} className={LIST}>
               {count > 1 ? (
                 <button
                   type="button"
                   aria-expanded={open.has(song.id)}
                   onClick={() => toggle(song.id)}
-                  className={cx(ROW, 'w-full text-left')}
+                  className={ROW}
                 >
                   {body}
                 </button>
@@ -354,15 +343,13 @@ function Results({ query, data }: { query: string; data: ScoreSearchResult }) {
                 </Link>
               )}
               {count > 1 && open.has(song.id) && (
-                <div className="pb-2 pl-[38px] min-[861px]:pl-[52px]">
-                  <VersionList
-                    song={song}
-                    artistName={artistName}
-                    isStarred={(path) => starred.has(path)}
-                    busyPath={busyPath}
-                    onStar={(sg, v) => void star(sg, v, artistName)}
-                  />
-                </div>
+                <VersionList
+                  song={song}
+                  artistName={artistName}
+                  isStarred={(path) => starred.has(path)}
+                  busyPath={busyPath}
+                  onStar={(sg, v) => void star(sg, v, artistName)}
+                />
               )}
             </li>
           )

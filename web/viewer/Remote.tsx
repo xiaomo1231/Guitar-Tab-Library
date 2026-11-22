@@ -56,34 +56,38 @@ const REMOTE_CSS = `
 .gl-remote {
   right: max(16px, env(safe-area-inset-right, 0px));
   bottom: max(16px, env(safe-area-inset-bottom, 0px));
-  width: 372px; padding: 12px;
-  background: hsl(var(--background) / 0.94); backdrop-filter: blur(14px);
+  width: 380px; padding: 12px;
+  background: hsl(var(--card) / 0.96); backdrop-filter: blur(14px);
   border: 1px solid hsl(var(--border)); border-radius: 16px;
-  box-shadow: 0 18px 50px -20px rgba(0, 0, 0, 0.55);
+  box-shadow: var(--shadow-lift);
 }
-.gl-r-row { display: flex; align-items: center; gap: 8px; }
+.gl-r-row { display: flex; align-items: center; gap: 10px; }
 .gl-grid { margin-top: 10px; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
-.gl-grid + .gl-grid { margin-top: 8px; }
+.gl-grid + .gl-grid { margin-top: 6px; }
+/* Tool keys: all the same size, an icon over a label; a lit key is tinted, never filled. */
 .gl-key {
-  min-height: 44px; min-width: 0; border: 1px solid hsl(var(--border)); border-radius: 10px;
-  background: hsl(var(--background)); color: inherit; display: grid; place-items: center;
-  font-size: 12px; line-height: 1.1; padding: 4px 2px; text-decoration: none;
-  box-shadow: 0 2px 0 hsl(var(--border)); transition: transform 60ms, box-shadow 60ms;
+  min-height: 52px; min-width: 0; border: 1px solid hsl(var(--border)); border-radius: 12px;
+  background: none; color: hsl(var(--foreground)); display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 2px;
+  font-size: 13px; line-height: 1.1; padding: 4px 2px; text-decoration: none;
+  transition: background-color 120ms, border-color 120ms, color 120ms, transform 80ms;
 }
-.gl-key:active:not(:disabled) { transform: translateY(2px); box-shadow: none; }
+.gl-key:hover:not(:disabled) { background: hsl(var(--raised)); }
+.gl-key:active:not(:disabled) { transform: scale(0.96); }
 .gl-key:disabled { opacity: 0.45; cursor: not-allowed; }
-.gl-key[aria-pressed="true"] {
-  background: hsl(var(--primary)); border-color: hsl(var(--primary)); color: hsl(var(--primary-foreground));
-  box-shadow: 0 2px 0 hsl(var(--primary-strong));
+.gl-key[aria-pressed="true"], .gl-key[aria-pressed="true"]:hover {
+  background: hsl(var(--accent)); border-color: hsl(var(--primary) / 0.45); color: hsl(var(--primary));
 }
-.gl-key small { display: block; font-size: 10px; opacity: 0.72; }
+.gl-key small { display: block; font-size: 11px; color: hsl(var(--muted-foreground)); }
+.gl-key[aria-pressed="true"] small { color: hsl(var(--primary)); }
+/* The play button: the one loud thing in the dock. */
 .gl-play {
-  width: 58px; height: 58px; border-radius: 50%; border: 0; flex: none;
+  width: 56px; height: 56px; border-radius: 50%; border: 0; flex: none;
   background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); display: grid; place-items: center;
-  box-shadow: 0 4px 0 hsl(var(--primary-strong));
 }
-.gl-play { transition: transform 60ms, box-shadow 60ms; }
-.gl-play:active:not(:disabled) { transform: translateY(3px); box-shadow: 0 1px 0 hsl(var(--primary-strong)); }
+.gl-play { transition: transform 80ms, background-color 120ms; }
+.gl-play:hover:not(:disabled) { background: hsl(var(--primary-strong)); }
+.gl-play:active:not(:disabled) { transform: scale(0.95); }
 .gl-play:disabled { opacity: 0.5; cursor: not-allowed; }
 .gl-tl { flex: 1; min-width: 0; }
 .gl-tm { font-family: var(--font-mono); font-size: 12px; color: hsl(var(--muted-foreground)); display: flex; justify-content: space-between; gap: 6px; font-variant-numeric: tabular-nums; }
@@ -94,20 +98,21 @@ const REMOTE_CSS = `
 @media (prefers-reduced-motion: reduce) { .gl-prog i { transition: none; } }
 .gl-min {
   border: 0; background: none; color: hsl(var(--muted-foreground)); width: 44px; height: 44px;
-  border-radius: 10px; flex: none; font-size: 18px; line-height: 1;
+  border-radius: 999px; flex: none; font-size: 18px; line-height: 1; transition: background-color 120ms;
 }
+.gl-min:hover { background: hsl(var(--raised)); color: hsl(var(--foreground)); }
 .gl-hint { font-size: 12px; color: hsl(var(--muted-foreground)); margin: 8px 2px 0; }
 .gl-pop {
   position: absolute; right: 0; bottom: calc(100% + 10px); width: 100%; max-height: 62dvh; overflow-y: auto; overscroll-behavior: contain;
-  background: hsl(var(--background)); border: 1px solid hsl(var(--border)); border-radius: 14px;
-  padding: 14px; box-shadow: 0 18px 40px -18px rgba(0, 0, 0, 0.5);
+  background: hsl(var(--card)); border: 1px solid hsl(var(--border)); border-radius: 16px;
+  padding: 14px; box-shadow: var(--shadow-lift);
 }
 /* Opened by tap / click: grows out of the remote (from its corner). Opened by a key: instant. */
 @keyframes gl-pop-in { from { opacity: 0; transform: scale(0.97); } }
 .gl-pop { transform-origin: bottom right; animation: gl-pop-in 150ms cubic-bezier(0.23, 1, 0.32, 1); }
 .gl-remote[data-key-pop] .gl-pop { animation: none; }
 @media (prefers-reduced-motion: reduce) { .gl-pop { animation: none; } }
-.gl-pop h4 { margin: 0 0 10px; font-size: 13px; letter-spacing: 0.12em; color: hsl(var(--muted-foreground)); font-weight: 600; }
+.gl-pop h4 { margin: 0 0 10px; font-size: 13px; letter-spacing: 0.02em; color: hsl(var(--muted-foreground)); font-weight: 700; }
 .gl-pop h4:not(:first-child) { margin-top: 14px; }
 .gl-pop .gl-hint { margin-top: 12px; }
 .gl-pop .gl-tip { margin-top: 6px; }
@@ -119,14 +124,15 @@ const REMOTE_CSS = `
 .gl-step .gl-val { min-width: 56px; text-align: center; font-family: var(--font-mono); font-size: 13px; font-variant-numeric: tabular-nums; }
 .gl-status {
   margin: 12px 0 0; padding: 8px 10px; border-radius: 9px; font-family: var(--font-mono);
-  font-size: 13px; font-variant-numeric: tabular-nums; background: hsl(var(--primary) / 0.12);
-  border: 1px solid hsl(var(--primary) / 0.35);
+  font-size: 13px; font-variant-numeric: tabular-nums; background: hsl(var(--accent));
+  border: 1px solid hsl(var(--primary) / 0.35); color: hsl(var(--primary));
 }
 .gl-pill {
   min-height: 40px; min-width: 40px; border: 1px solid hsl(var(--border)); background: none; color: inherit;
-  border-radius: 9px; padding: 6px 10px; font-size: 13px;
+  border-radius: 10px; padding: 6px 10px; font-size: 13px; transition: background-color 120ms, border-color 120ms;
 }
-.gl-pill[aria-pressed="true"] { background: hsl(var(--primary)); border-color: hsl(var(--primary)); color: hsl(var(--primary-foreground)); }
+.gl-pill:hover:not(:disabled) { background: hsl(var(--raised)); }
+.gl-pill[aria-pressed="true"], .gl-pill[aria-pressed="true"]:hover { background: hsl(var(--accent)); border-color: hsl(var(--primary) / 0.45); color: hsl(var(--primary)); }
 .gl-pill:disabled { opacity: 0.45; }
 .gl-pill.grow { flex: 1; text-align: left; }
 .gl-dial { display: flex; align-items: center; gap: 10px; }
@@ -150,15 +156,16 @@ const REMOTE_CSS = `
 .gl-arr .gl-err { color: hsl(var(--destructive)); font-size: 12px; margin: 0; }
 .gl-ms {
   min-width: 40px; min-height: 40px; border: 1px solid hsl(var(--border)); background: none; color: inherit;
-  border-radius: 9px; font-family: var(--font-mono); font-size: 13px;
+  border-radius: 10px; font-family: var(--font-mono); font-size: 13px;
 }
-.gl-ms[aria-pressed="true"] { background: hsl(var(--primary)); border-color: hsl(var(--primary)); color: hsl(var(--primary-foreground)); }
+.gl-ms[aria-pressed="true"] { background: hsl(var(--accent)); border-color: hsl(var(--primary) / 0.45); color: hsl(var(--primary)); }
 .gl-filebar { right: max(16px, env(safe-area-inset-right, 0px)); bottom: max(16px, env(safe-area-inset-bottom, 0px)); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
-.gl-filebar .gl-key { width: 76px; }
+.gl-filebar .gl-key { width: 76px; background: hsl(var(--card)); box-shadow: var(--shadow-lift); }
+.gl-filebar .gl-key[aria-pressed="true"] { background: hsl(var(--accent)); }
 .gl-filebar .gl-note { font-size: 12px; background: hsl(var(--foreground)); color: hsl(var(--background)); padding: 4px 10px; border-radius: 8px; }
 @media (max-width: 859px) {
   .gl-remote {
-    left: 0; right: 0; bottom: 0; width: auto; border-radius: 18px 18px 0 0;
+    left: 0; right: 0; bottom: 0; width: auto; border-radius: 16px 16px 0 0; border-bottom: 0;
     padding: 12px max(16px, env(safe-area-inset-right, 0px)) max(14px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
   }
   .gl-pop { left: 0; right: 0; }

@@ -2,11 +2,11 @@ import { useEffect, useRef, useState } from 'react'
 import type { EnsembleFile, TrackKind } from '@/songs/scoreServerTypes'
 import { api, errorText } from '../lib/api'
 import { addSong, useBand } from '../lib/band'
-import { buttonClass, cx } from '../lib/classes'
+import { buttonClass, cx, LIST, PILL } from '../lib/classes'
 import { fileBaseName } from '../lib/format'
-import { hrefEnsembles, hrefViewer } from '../lib/route'
+import { hrefEnsembles, hrefViewer, HREF_BAND } from '../lib/route'
 import { Link } from '../components/Link'
-import { Notice } from '../components/ui'
+import { Notice, PageBar } from '../components/ui'
 import { useHistoryState, useRestoreScroll } from '../lib/scrollMemory'
 
 const PAGE = 50
@@ -203,14 +203,10 @@ export function EnsemblesPage({ q, need }: { q: string; need: string }) {
 
   return (
     <>
-      <header className="pb-2 pt-4 min-[861px]:pt-6">
-        <h1 className="m-0 border-b border-foreground pb-2.5 font-display text-[26px] font-black leading-tight min-[861px]:text-[30px]">
-          找乐队谱
-        </h1>
-        <p className="pt-1.5 text-sm leading-relaxed text-muted-foreground">
-          从谱库里找有多个乐器声部的 GP 谱。用下面的选项筛选，比如「完整乐队」= 同时有鼓、贝斯和吉他或键盘。
-        </p>
-      </header>
+      <PageBar title="找乐队谱" back="‹ 乐队" fallback={HREF_BAND} />
+      <p className="-mt-2 pb-3 text-sm leading-relaxed text-muted-foreground">
+        从谱库里找有多个乐器声部的 GP 谱。用下面的选项筛选，比如「完整乐队」= 同时有鼓、贝斯和吉他或键盘。
+      </p>
 
       <label className="relative block">
         <span className="sr-only">搜索歌名或歌手</span>
@@ -238,7 +234,7 @@ export function EnsemblesPage({ q, need }: { q: string; need: string }) {
           placeholder="在这些乐队谱里搜歌名、歌手"
           value={text}
           onChange={(e) => setText(e.target.value)}
-          className="h-14 w-full rounded-[14px] border-0 bg-card pl-[50px] pr-12 text-lg text-foreground outline-none ring-inset transition-shadow placeholder:text-muted-foreground focus:ring-2 focus:ring-primary [&::-webkit-search-cancel-button]:appearance-none"
+          className="h-14 w-full rounded-[14px] border border-border bg-card pl-[50px] pr-12 text-base text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-primary min-[861px]:text-lg [&::-webkit-search-cancel-button]:appearance-none"
         />
         {text && (
           <button
@@ -255,7 +251,7 @@ export function EnsemblesPage({ q, need }: { q: string; need: string }) {
         )}
       </label>
 
-      <div role="group" aria-label="乐队要求" className="flex flex-wrap gap-2.5 pb-1.5 pt-4">
+      <div role="group" aria-label="乐队要求" className="flex flex-wrap gap-2 pb-1.5 pt-3">
         {NEEDS.map(([key, label]) => {
           const on = chips.has(key)
           return (
@@ -265,10 +261,10 @@ export function EnsemblesPage({ q, need }: { q: string; need: string }) {
               aria-pressed={on}
               onClick={() => toggle(key)}
               className={cx(
-                'min-h-11 rounded-full border-[1.5px] px-4 text-[13px] transition-colors',
+                'min-h-11 rounded-full border px-4 text-[13px] transition-colors',
                 on
-                  ? 'border-primary text-primary'
-                  : 'border-border text-foreground hover:border-foreground',
+                  ? 'border-primary bg-primary/10 text-primary'
+                  : 'border-border bg-card text-foreground hover:border-foreground',
               )}
             >
               {on && (
@@ -372,7 +368,7 @@ function Results({
 
   return (
     <>
-      <p className="flex flex-wrap items-center gap-x-3 px-1 pb-1 pt-3 text-xs text-muted-foreground">
+      <p className="flex flex-wrap items-center gap-x-3 pb-2.5 pt-4 text-[13px] text-muted-foreground">
         <span>
           共 <span className="mono">{total.toLocaleString('zh-CN')}</span> 首
         </span>
@@ -380,6 +376,7 @@ function Results({
           <label className="inline-flex items-center gap-1.5">
             <input
               type="checkbox"
+              className="h-4 w-4 accent-[hsl(var(--primary))]"
               checked={untitled}
               onChange={(e) => onUntitled(e.target.checked)}
             />
@@ -389,9 +386,9 @@ function Results({
           </label>
         )}
       </p>
-      <ol className="m-0 list-none p-0 pt-1">
-        {items.map((f, i) => (
-          <EnsembleRow key={f.path} file={f} index={i} />
+      <ol className={cx(LIST, 'm-0 list-none p-0', items.length >= total && 'mb-24')}>
+        {items.map((f) => (
+          <EnsembleRow key={f.path} file={f} />
         ))}
       </ol>
 
@@ -412,7 +409,8 @@ function Results({
   )
 }
 
-function EnsembleRow({ file: f, index }: { file: EnsembleFile; index: number }) {
+/** One file as a card row: title, artist, instruments and track names, then 看谱 and 加入歌单. */
+function EnsembleRow({ file: f }: { file: EnsembleFile }) {
   const band = useBand()
   const inSetlist = (band.state?.songs ?? []).some((s) => s.path === f.path)
   const [added, setAdded] = useState(false)
@@ -439,24 +437,21 @@ function EnsembleRow({ file: f, index }: { file: EnsembleFile; index: number }) 
     .join(' · ')
 
   return (
-    <li className="border-t border-border py-3 first:border-t-0">
-      <div className="grid grid-cols-[38px_minmax(0,1fr)] gap-2 min-[861px]:grid-cols-[52px_minmax(0,1fr)]">
-        <span className="mono pr-3.5 text-right text-base font-semibold text-muted-foreground">
-          {index + 1}.
-        </span>
+    <li className="border-t border-border px-3.5 py-3 transition-colors first:border-t-0 hover:bg-[hsl(var(--raised))]">
+      <div>
         <div className="min-w-0">
-          <p className="m-0 flex flex-wrap items-baseline gap-x-2 break-words text-lg font-bold leading-snug">
+          <p className="m-0 flex flex-wrap items-baseline gap-x-2 break-words text-base font-bold leading-snug">
             {f.title ? title : '曲名未识别'}
             {!f.title && (
               <span className="text-sm font-normal text-muted-foreground">{title}</span>
             )}
             {f.band && (
-              <span className="inline-flex shrink-0 items-center rounded-full border border-primary px-1.5 text-[11px] leading-5 text-primary">
+              <span className={cx(PILL, 'border-primary text-[11px] font-normal text-primary')}>
                 完整乐队
               </span>
             )}
           </p>
-          <p className="m-0 truncate text-[15px] text-muted-foreground">{f.artist || ' '}</p>
+          <p className="m-0 truncate text-[13px] text-muted-foreground">{f.artist || ' '}</p>
           <p className="pt-1 text-sm font-medium">{instrumentation(f)}</p>
           {names && (
             <p className="line-clamp-2 pt-0.5 text-xs leading-relaxed text-muted-foreground">

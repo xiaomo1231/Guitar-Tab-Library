@@ -7,22 +7,24 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import {
   activeLine,
+  alignByTime,
   alignLine,
   alignedCount,
+  hasLrcTimes,
   lineBars,
+  lrcLineTimes,
   lyricText,
   nextLine,
   parseLyricText,
   type SheetLine,
 } from '@/songs/lyricSheet'
-import { buttonClass, cx } from '../lib/classes'
+import { buttonClass, cx, SECTION_TITLE } from '../lib/classes'
 
-const BTN =
-  'rounded-md border border-[hsl(var(--border))] px-2.5 py-1 text-sm hover:border-[hsl(var(--primary))] disabled:cursor-not-allowed disabled:opacity-50'
-const MUTED = 'text-[hsl(var(--muted-foreground))]'
+const BTN = cx(buttonClass('outline'), 'px-3 text-[13px]')
+const MUTED = 'text-muted-foreground'
 const MONO = { fontFamily: 'var(--font-mono)' } as const
 const NUM_INPUT =
-  'w-16 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2 py-1 text-sm focus:border-[hsl(var(--primary))] focus:outline-none'
+  'h-11 w-16 rounded-lg border border-border bg-background px-2 text-sm focus:border-primary focus:outline-none'
 const LYRIC = 'text-xl leading-relaxed md:text-2xl'
 
 type Mode = 'view' | 'edit' | 'align'
@@ -73,7 +75,7 @@ function ChordRow(props: { segments: ChordSegment[]; bar: number | null }) {
       {shown.map((s, i) => (
         <span key={s.bar}>
           {i > 0 && <span className="px-1.5 opacity-50">|</span>}
-          <span className={i === current ? 'font-bold text-[hsl(var(--primary))]' : undefined}>
+          <span className={i === current ? 'font-bold text-primary' : undefined}>
             {s.names.join(' ')}
           </span>
         </span>
@@ -143,8 +145,12 @@ export function LyricSheetPanel(props: {
   canControl: boolean
   onJumpBar: (bar: number) => void
   onSave: (lines: SheetLine[]) => Promise<void>
+  /** When each bar starts in the score (ms); lets a pasted .lrc file be aligned by its times. */
+  barStartsMs?: number[]
+  /** The words written inside the score, already tied to bars; offered while the sheet is empty. */
+  scoreLines?: SheetLine[]
 }) {
-  const { lines, bar, totalBars, chords, playing, canControl, onJumpBar, onSave } = props
+  const { lines, bar, totalBars, chords, playing, canControl, onJumpBar, onSave, barStartsMs, scoreLines } = props
 
   const [mode, setMode] = useState<Mode>('view')
   const [text, setText] = useState('')
@@ -171,6 +177,15 @@ export function LyricSheetPanel(props: {
     setError(null)
     setMode('align')
   }
+
+  /** Pasted text → lines; an .lrc file's times place the lines that have no bar yet. */
+  const parsed = (): SheetLine[] => {
+    const next = parseLyricText(text, lines)
+    if (!barStartsMs || barStartsMs.length === 0 || !hasLrcTimes(text)) return next
+    if (next.some((l) => l.bar !== null)) return next
+    return alignByTime(next, lrcLineTimes(text), barStartsMs)
+  }
+  const lrcReady = !!barStartsMs && barStartsMs.length > 0 && hasLrcTimes(text)
 
   const save = async (next: SheetLine[]) => {
     setBusy(true)
@@ -214,7 +229,7 @@ export function LyricSheetPanel(props: {
   }, [lines, bar, active, totalBars])
 
   const errorRow = error && (
-    <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+    <p role="alert" className="m-0 text-sm text-destructive">
       {error}
     </p>
   )
@@ -230,19 +245,25 @@ export function LyricSheetPanel(props: {
             onChange={(e) => setText(e.target.value)}
             rows={14}
             autoFocus
-            className="min-h-[14rem] w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-3 py-2 text-base leading-relaxed focus:border-[hsl(var(--primary))] focus:outline-none"
+            className="min-h-[14rem] w-full rounded-[12px] border border-border bg-background px-3 py-2 text-base leading-relaxed focus:border-primary focus:outline-none"
           />
         </label>
         <p className={MUTED}>
-          一行一句。单独一行写 [副歌] 这样的段落名，会显示成段落标题。改词不会丢掉已经对齐的小节。
+          一行一句。单独一行写 [副歌] 这样的段落名，会显示成段落标题。改词不会丢掉已经对齐的小节。也可以直接贴
+          .lrc 歌词文件的内容。
         </p>
+        {lrcReady && (
+          <p className="m-0 rounded-[12px] border border-primary px-3 py-2 text-primary">
+            这段歌词带时间，保存时会按时间自动对到小节。谱子和原曲速度不一样或者有反复时会有偏差，保存后看一眼，不对的在「对齐小节」里改。
+          </p>
+        )}
         {errorRow}
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
             className={buttonClass('primary')}
             disabled={busy}
-            onClick={() => void save(parseLyricText(text, lines))}
+            onClick={() => void save(parsed())}
           >
             {busy ? '保存中…' : '保存'}
           </button>
@@ -271,7 +292,7 @@ export function LyricSheetPanel(props: {
       <section aria-label="对齐小节" className="flex flex-col gap-3 text-sm">
         <p className={MUTED}>按下面播放器的播放键，听到哪一句开始就点一下。</p>
         {/* Stays in reach while the list scrolls with the song. */}
-        <div className="sticky -top-3 z-10 -mx-3 flex flex-wrap items-center gap-2 border-b border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-2">
+        <div className="sticky -top-3 z-10 -mx-3 flex flex-wrap items-center gap-2 border-b border-border bg-card px-3 py-2">
           <button
             type="button"
             className={cx(buttonClass('primary'), 'min-h-12 text-base')}
@@ -305,9 +326,9 @@ export function LyricSheetPanel(props: {
                 }}
                 aria-current={isPointer ? 'step' : undefined}
                 className={cx(
-                  'flex items-center gap-2 rounded-md border-l-4 px-2 py-1.5',
+                  'flex items-center gap-2 rounded-[10px] border-l-4 px-2 py-1.5',
                   isPointer
-                    ? 'border-[hsl(var(--primary))] bg-[hsl(var(--primary)/0.08)]'
+                    ? 'border-primary bg-accent'
                     : 'border-transparent',
                 )}
               >
@@ -319,7 +340,7 @@ export function LyricSheetPanel(props: {
                   {l.section !== null && <span className={cx('text-xs', MUTED)}>{l.section}</span>}
                   <span className={cx('text-base', l.bar === null && MUTED)}>
                     {isPointer && (
-                      <span aria-hidden="true" className="mr-1 text-[hsl(var(--primary))]">
+                      <span aria-hidden="true" className="mr-1 text-primary">
                         ▶
                       </span>
                     )}
@@ -376,9 +397,26 @@ export function LyricSheetPanel(props: {
     return (
       <section aria-label="词谱" className="flex flex-col items-start gap-3 text-sm">
         <p className={MUTED}>这首歌还没有歌词。</p>
-        <button type="button" className={buttonClass('primary')} onClick={startEdit}>
-          粘贴歌词
-        </button>
+        {errorRow}
+        <div className="flex flex-wrap gap-2">
+          {scoreLines && scoreLines.length > 0 && (
+            <button
+              type="button"
+              className={buttonClass('primary')}
+              disabled={busy}
+              onClick={() => void save(scoreLines)}
+            >
+              {busy ? '保存中…' : `用谱里自带的歌词（${scoreLines.length} 句，已对好小节）`}
+            </button>
+          )}
+          <button
+            type="button"
+            className={buttonClass(scoreLines && scoreLines.length > 0 ? 'outline' : 'primary')}
+            onClick={startEdit}
+          >
+            粘贴歌词
+          </button>
+        </div>
       </section>
     )
   }
@@ -388,7 +426,7 @@ export function LyricSheetPanel(props: {
       role="status"
       className={cx(
         'py-1 text-sm',
-        status.soon ? 'font-semibold text-[hsl(var(--primary))]' : MUTED,
+        status.soon ? 'font-semibold text-primary' : MUTED,
       )}
       style={MONO}
     >
@@ -399,6 +437,7 @@ export function LyricSheetPanel(props: {
   return (
     <section aria-label="词谱" className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center justify-end gap-2">
+        <h3 className={cx(SECTION_TITLE, 'mr-auto')}>词谱</h3>
         <button type="button" className={BTN} onClick={startEdit}>
           编辑歌词
         </button>
@@ -429,9 +468,9 @@ export function LyricSheetPanel(props: {
             </>
           )
           const rowClass = cx(
-            'flex w-full flex-col items-start rounded-md border-l-4 px-3 py-1 text-left transition-opacity duration-150',
+            'flex w-full flex-col items-start rounded-[10px] border-l-4 px-3 py-1 text-left transition-opacity duration-150',
             isActive
-              ? 'border-[hsl(var(--primary))] bg-[hsl(var(--primary)/0.08)] opacity-100'
+              ? 'border-primary bg-accent opacity-100'
               : cx('border-transparent', l.bar === null ? 'opacity-40' : 'opacity-60'),
           )
           return (
@@ -444,14 +483,14 @@ export function LyricSheetPanel(props: {
             >
               {status && status.before === i && statusRow}
               {l.section !== null && (
-                <div className={cx('mt-3 px-3 text-xs font-medium tracking-wide', MUTED)}>
+                <div className={cx('mt-3 px-3 text-xs font-bold tracking-[0.02em]', MUTED)}>
                   {l.section}
                 </div>
               )}
               {canControl && l.bar !== null ? (
                 <button
                   type="button"
-                  className={cx(rowClass, 'hover:bg-[hsl(var(--primary)/0.05)]')}
+                  className={cx(rowClass, !isActive && 'hover:bg-[hsl(var(--raised))]')}
                   onClick={() => onJumpBar(l.bar!)}
                   title={`跳到第 ${l.bar} 小节`}
                 >

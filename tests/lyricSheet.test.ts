@@ -5,6 +5,10 @@ import {
   MAX_SHEET_LINE_CHARS,
   MAX_SHEET_SECTION_CHARS,
   activeLine,
+  alignByTime,
+  hasLrcTimes,
+  lrcLineTimes,
+  sheetFromSyllables,
   alignLine,
   alignedCount,
   checkSheetLines,
@@ -356,4 +360,64 @@ describe('checkSheetLines', () => {
       })
     },
   )
+})
+
+describe('.lrc text', () => {
+  const lrc = ['[ti:海阔天空]', '[ar:Beyond]', '[00:01.00]', '[00:12.50]今天我', '[00:20.5][01:40.00]寒夜里看雪飘过', '[副歌]', '没时间的一行'].join('\n')
+
+  it('drops time tags and header lines', () => {
+    expect(parseLyricText(lrc).map((l) => [l.text, l.section])).toEqual([
+      ['今天我', null],
+      ['寒夜里看雪飘过', null],
+      ['没时间的一行', '副歌'],
+    ])
+  })
+
+  it('knows when a text has time tags', () => {
+    expect(hasLrcTimes(lrc)).toBe(true)
+    expect(hasLrcTimes('[副歌]\n今天我')).toBe(false)
+    expect(hasLrcTimes(lrc)).toBe(true)
+  })
+
+  it('reads one time per lyric line', () => {
+    expect(lrcLineTimes(lrc)).toEqual([12500, 20500, null])
+  })
+
+  it('aligns by time, pickups to the next bar, and leaves untimed lines alone', () => {
+    const lines = parseLyricText(lrc)
+    // bars start every 4 s
+    const starts = Array.from({ length: 10 }, (_, i) => i * 4000)
+    const out = alignByTime(lines, lrcLineTimes(lrc), starts)
+    expect(out.map((l) => l.bar)).toEqual([4, 6, null])
+    // 19.8 s is a pickup into bar 6 (starts at 20 s)
+    expect(alignByTime(lines.slice(0, 1), [19800], starts)[0]?.bar).toBe(6)
+  })
+
+  it('does not let a line go back before the previous one', () => {
+    const lines = parseLyricText('a\nb')
+    const out = alignByTime(lines, [20000, 5000], [0, 4000, 8000, 12000, 16000, 20000])
+    expect(out.map((l) => l.bar)).toEqual([6, null])
+  })
+})
+
+describe('sheetFromSyllables', () => {
+  it('builds lines from the words in a score', () => {
+    const syl = [
+      { bar: 3, text: '今' },
+      { bar: 3, text: '天' },
+      { bar: 4, text: '我' },
+      { bar: 5, text: '寒' },
+      { bar: 5, text: '夜' },
+      { bar: 8, text: 'hel-' },
+      { bar: 8, text: 'lo' },
+      { bar: 8, text: 'world' },
+      { bar: 0, text: 'x' },
+      { bar: 9, text: ' ' },
+    ]
+    expect(sheetFromSyllables(syl)).toEqual([
+      { text: '今天我', bar: 3, section: null },
+      { text: '寒夜', bar: 5, section: null },
+      { text: 'hello world', bar: 8, section: null },
+    ])
+  })
 })

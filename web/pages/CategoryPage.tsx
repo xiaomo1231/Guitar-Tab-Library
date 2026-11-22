@@ -3,6 +3,7 @@ import { useLibrary } from '../lib/libraryContext'
 import { useRestoreScroll } from '../lib/scrollMemory'
 import { Link } from '../components/Link'
 import { Notice, PageBar } from '../components/ui'
+import { cx, LIST } from '../lib/classes'
 
 /** A category with several groups (分组): the groups as contents rows; tap one for its artists. */
 export function CategoryPage({ id }: { id: string }) {
@@ -13,7 +14,7 @@ export function CategoryPage({ id }: { id: string }) {
   if (!category) {
     return (
       <>
-        <PageBar title="分类" back="← 目录" fallback="#/" />
+        <PageBar title="分类" back="‹ 谱库" fallback="#/" />
         <div className="py-6">
           <Notice>找不到这个分类。文件夹可能已经改过名字，回到目录重新看一下。</Notice>
         </div>
@@ -25,7 +26,7 @@ export function CategoryPage({ id }: { id: string }) {
     <>
       <PageBar
         title={category.name}
-        back="← 目录"
+        back="‹ 谱库"
         fallback="#/"
         subtitle={`${category.groups.length} 个分组 · ${category.files.toLocaleString('zh-CN')} 份`}
       />
@@ -34,25 +35,24 @@ export function CategoryPage({ id }: { id: string }) {
           <Notice>这个分类里还没有内容。</Notice>
         </div>
       ) : (
-        <ol className="m-0 mb-20 list-none p-0 pt-2">
-          {category.groups.map((g, i) => (
-            <li key={g.id} className="border-t border-border last:border-b">
+        <ol className={cx(LIST, 'mb-20 list-none p-0')}>
+          {category.groups.map((g) => (
+            <li key={g.id} className="border-t border-border first:border-t-0">
               <Link
                 href={hrefGroup(g)}
-                className="group grid min-h-11 grid-cols-[44px_minmax(0,auto)_minmax(1rem,1fr)_auto] items-baseline gap-2.5 py-3.5"
+                className="flex min-h-[60px] items-center gap-3 px-3.5 py-2 transition-colors hover:bg-[hsl(var(--raised))]"
               >
-                <span className="mono text-[13px] text-muted-foreground">
-                  {String(i + 1).padStart(2, '0')}
-                </span>
-                <span className="font-display text-[26px] font-black tracking-[0.01em] transition-colors group-hover:text-primary max-[860px]:text-[22px]">
-                  {g.name}
-                </span>
-                <span aria-hidden className="leader" />
-                <span className="mono text-[15px]">
-                  <span className="mr-2 text-xs text-muted-foreground">
+                <span className="min-w-0 flex-1">
+                  <b className="block truncate text-[17px] font-bold">{g.name}</b>
+                  <span className="block truncate text-[13px] text-muted-foreground">
                     {g.artists.toLocaleString('zh-CN')} {g.noun}
                   </span>
+                </span>
+                <span className="mono shrink-0 text-[13px] text-muted-foreground">
                   {g.files.toLocaleString('zh-CN')}
+                </span>
+                <span aria-hidden className="shrink-0 text-muted-foreground">
+                  ›
                 </span>
               </Link>
             </li>

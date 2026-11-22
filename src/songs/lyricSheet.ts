@@ -30,18 +30,129 @@ function sectionOf(line: string): string | null {
   return name || null
 }
 
+const LRC_TIME = /\[(\d{1,3}):(\d{1,2})(?:[.:](\d{1,3}))?\]/g
+const LRC_META = /^\[(?:ti|ar|al|by|au|re|ve|length|offset|tool|id|hash|sign|total|language|kana)\s*:[^\]]*\]$/i
+
+/** A line of an .lrc file without its time tags; '' for a tag-only or metadata line. */
+function stripLrc(raw: string): string {
+  const line = raw.trim()
+  if (LRC_META.test(line)) return ''
+  return line
+    .replace(LRC_TIME, '')
+    .replace(/<\d{1,3}:\d{1,2}(?:[.:]\d{1,3})?>/g, '')
+    .trim()
+}
+
+/** True when the text carries .lrc time tags (then it can be aligned by time). */
+export function hasLrcTimes(text: string): boolean {
+  LRC_TIME.lastIndex = 0
+  return LRC_TIME.test(text)
+}
+
+/**
+ * The start time of each lyric line of an .lrc text, in the order parseLyricText gives the
+ * lines (a line with several time tags uses the first); null where a line has no tag.
+ */
+export function lrcLineTimes(text: string): Array<number | null> {
+  const out: Array<number | null> = []
+  for (const raw of text.split(/\r?\n/)) {
+    const line = stripLrc(raw)
+    if (!line || sectionOf(line) !== null) continue
+    if (out.length >= MAX_SHEET_LINES) break
+    const m = /\[(\d{1,3}):(\d{1,2})(?:[.:](\d{1,3}))?\]/.exec(raw)
+    if (!m) {
+      out.push(null)
+      continue
+    }
+    const frac = m[3] ?? ''
+    const ms = frac ? Number(frac.padEnd(3, '0').slice(0, 3)) : 0
+    out.push(Number(m[1]) * 60000 + Number(m[2]) * 1000 + ms)
+  }
+  return out
+}
+
+/**
+ * Ties lines to bars by time: `barStartsMs[i]` is when bar i+1 starts in the score. A line
+ * goes to the bar that is sounding at its time (a line within `leadMs` before a bar line
+ * belongs to the next bar: singers come in on the pickup). Lines without a time, or that
+ * would break the rising order, stay as they are.
+ */
+export function alignByTime(
+  lines: readonly SheetLine[],
+  times: ReadonlyArray<number | null>,
+  barStartsMs: readonly number[],
+  leadMs = 350,
+): SheetLine[] {
+  let last = 0
+  return lines.map((l, i) => {
+    const t = times[i]
+    if (t === null || t === undefined || barStartsMs.length === 0) {
+      if (l.bar !== null) last = Math.max(last, l.bar)
+      return l
+    }
+    let bar = 1
+    while (bar < barStartsMs.length && barStartsMs[bar]! <= t + leadMs) bar++
+    if (bar < last) return { ...l, bar: null }
+    last = bar
+    return { ...l, bar }
+  })
+}
+
+/** One sung syllable read from a score: the bar it is in (1-based) and its text. */
+export interface ScoreSyllable {
+  bar: number
+  text: string
+}
+
+const CJK = /[\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff]/
+
+/**
+ * Lyrics written inside a score (Guitar Pro) → lines already tied to bars. A new line
+ * starts after a bar without words, or when the line has run for `barsPerLine` bars.
+ * Syllables ending in "-" join the next one; Latin words get spaces, CJK does not.
+ */
+export function sheetFromSyllables(syllables: readonly ScoreSyllable[], barsPerLine = 2): SheetLine[] {
+  const out: SheetLine[] = []
+  let text = ''
+  let startBar = 0
+  let lastBar = 0
+  let glue = false
+  const push = () => {
+    const clean = chars(text.trim()).slice(0, MAX_SHEET_LINE_CHARS).join('')
+    if (clean && out.length < MAX_SHEET_LINES) out.push({ text: clean, bar: startBar, section: null })
+    text = ''
+  }
+  for (const s of syllables) {
+    const word = s.text.trim()
+    if (!word || !Number.isInteger(s.bar) || s.bar < 1) continue
+    if (text && (s.bar > lastBar + 1 || s.bar >= startBar + barsPerLine)) {
+      push()
+      glue = false
+    }
+    if (!text) startBar = s.bar
+    const joins = word.endsWith('-')
+    const piece = joins ? word.slice(0, -1) : word
+    const needSpace = text !== '' && !glue && !(CJK.test(piece[0] ?? '') || CJK.test(text.slice(-1)))
+    text += (needSpace ? ' ' : '') + piece
+    glue = joins
+    lastBar = s.bar
+  }
+  push()
+  return out
+}
+
 /**
  * Pasted text → lines. One lyric line per text line; empty lines are dropped; a line that
  * only names a section gives that name to the next lyric line. Lines of `previous` that
  * are still there (same text, in order) keep their bars, so editing the words does not
- * throw the alignment away.
+ * throw the alignment away. The time tags and header lines of an .lrc file are dropped.
  */
 export function parseLyricText(text: string, previous: readonly SheetLine[] = []): SheetLine[] {
   const out: SheetLine[] = []
   let section: string | null = null
   let from = 0
   for (const raw of text.split(/\r?\n/)) {
-    const line = raw.trim()
+    const line = stripLrc(raw)
     if (!line) continue
     const named = sectionOf(line)
     if (named !== null) {

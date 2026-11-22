@@ -8,7 +8,7 @@ import { INSTRUMENT_LABELS, chooseBand, useMe } from '../lib/session'
 import { Notice } from '../components/ui'
 
 const FIELD =
-  'h-12 w-full rounded-lg border border-border bg-card px-4 text-base text-foreground outline-none transition-colors focus:border-primary'
+  'h-12 w-full rounded-lg border border-border bg-transparent px-4 text-base text-foreground outline-none transition-colors focus:border-primary'
 
 const MIN_PASSWORD = 6
 const NAME_MIN = 2
@@ -27,7 +27,7 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
 }
 
 const Title = ({ children }: { children: ReactNode }) => (
-  <h1 className="m-0 font-display text-[clamp(36px,10vw,56px)] font-black leading-tight tracking-[-0.02em]">
+  <h1 className="m-0 font-display text-[26px] font-bold leading-tight min-[861px]:text-[30px]">
     {children}
   </h1>
 )
@@ -43,7 +43,7 @@ function CodeEntry() {
     if (ok) navigate(`#/invite/${clean}`)
   }
   return (
-    <div className="mx-auto w-full max-w-sm">
+    <div className="mx-auto w-full max-w-sm rounded-[18px] border border-border bg-card p-6 sm:p-8">
       <Title>{me ? '用邀请码加入乐队' : '用邀请码注册'}</Title>
       <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
         {me ? '用现在的账号加入另一个乐队，不用再注册。' : '谱库只对受邀的人开放。'}
@@ -255,7 +255,7 @@ export function InvitePage({
 
   if (me) {
     return (
-      <div className="mx-auto w-full max-w-sm py-8">
+      <div className="mx-auto my-8 w-full max-w-sm rounded-[18px] border border-border bg-card p-6 sm:p-8">
         <Title>{heading}</Title>
         {intro}
         <div className="mt-8 space-y-4">
@@ -278,7 +278,7 @@ export function InvitePage({
   }
 
   return (
-    <div className="mx-auto w-full max-w-sm">
+    <div className="mx-auto w-full max-w-sm rounded-[18px] border border-border bg-card p-6 sm:p-8">
       <Title>{heading}</Title>
       {intro}
       {onLogin && (

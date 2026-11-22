@@ -1,8 +1,8 @@
 import { useState, type FormEvent } from 'react'
 import { api, errorText } from '../lib/api'
-import { buttonClass, cx } from '../lib/classes'
+import { buttonClass, CARD, cx, LIST, SECTION_TITLE } from '../lib/classes'
 import { MINE_KIND_LABEL, mineRows, useMine, type MineKind, type MineRow } from '../lib/mine'
-import { hrefUpload } from '../lib/route'
+import { hrefUpload, HREF_ACCOUNT } from '../lib/route'
 import { useRestoreScroll } from '../lib/scrollMemory'
 import { Link } from '../components/Link'
 import { MiddleText } from '../components/MiddleText'
@@ -27,11 +27,11 @@ export function MinePage() {
     <>
       <PageBar
         title="我的谱子"
-        back="← 目录"
-        fallback="#/"
+        back="‹ 我的"
+        fallback={HREF_ACCOUNT}
         subtitle={data ? `${rows.length} 个` : undefined}
       />
-      <div className="max-w-[720px] space-y-10 pb-20 pt-6">
+      <div className="max-w-[720px] space-y-8 pb-20 pt-2">
         {error && (
           <Notice tone="error">
             {error}
@@ -51,14 +51,16 @@ export function MinePage() {
             const list = rows.filter((r) => r.kind === s.kind)
             return (
               <section key={s.kind} aria-label={MINE_KIND_LABEL[s.kind]}>
-                <h2 className="label m-0">
+                <h2 className={cx(SECTION_TITLE, 'mb-2.5')}>
                   {MINE_KIND_LABEL[s.kind]}
-                  <span className="ml-2 normal-case tracking-normal text-muted-foreground">{list.length}</span>
+                  <span className="mono ml-2 font-normal">{list.length}</span>
                 </h2>
                 {list.length === 0 ? (
-                  <p className="m-0 mt-2.5 text-sm text-muted-foreground">{s.empty}</p>
+                  <p className={cx(LIST, 'm-0 px-3.5 py-4 text-sm leading-relaxed text-muted-foreground')}>
+                    {s.empty}
+                  </p>
                 ) : (
-                  <ul className="m-0 mt-2.5 list-none p-0">
+                  <ul className={cx(LIST, 'm-0 list-none p-0')}>
                     {list.map((r) => (
                       <MineItem key={r.key} row={r} onChanged={reload} />
                     ))}
@@ -79,7 +81,7 @@ function UploadBox({ storage }: { storage: { used: number; limit: number | null 
   const full = storage.limit !== null && storage.used >= storage.limit
   const pct = storage.limit === null ? 0 : Math.min(100, Math.round((storage.used / storage.limit) * 100))
   return (
-    <section aria-label="上传谱子" className="rounded-lg border border-border p-4">
+    <section aria-label="上传谱子" className={CARD}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <p className="m-0 font-bold">上传自己的谱子</p>
@@ -142,19 +144,26 @@ function MineItem({ row, onChanged }: { row: MineRow; onChanged: () => void }) {
   }
 
   return (
-    <li className="border-t border-border py-3 last:border-b">
-      <div className="flex items-start gap-3">
-        <Link href={row.href} className="group min-w-0 flex-1">
-          <MiddleText
-            text={row.name}
-            className="text-[15px] font-bold transition-colors group-hover:text-primary"
-          />
-          <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-            {row.line} · {fmtDate(row.updatedAt)}
+    <li className="border-t border-border transition-colors first:border-t-0 hover:bg-[hsl(var(--raised))]">
+      <div className="flex min-h-[60px] items-center gap-1 pr-1.5">
+        <Link
+          href={row.href}
+          className="flex min-h-[60px] min-w-0 flex-1 items-center gap-3 py-2 pl-3.5 pr-1"
+        >
+          <span className="min-w-0 flex-1">
+            <MiddleText text={row.name} className="text-[15px] font-bold" />
+            <span className="mt-0.5 block truncate text-[13px] text-muted-foreground">
+              {row.line} · {fmtDate(row.updatedAt)}
+            </span>
           </span>
+          {!editable && (
+            <span aria-hidden className="shrink-0 text-muted-foreground">
+              ›
+            </span>
+          )}
         </Link>
         {editable && mode === null && (
-          <span className="flex shrink-0 gap-1">
+          <span className="flex shrink-0 gap-0.5">
             <button
               type="button"
               onClick={() => {
@@ -176,7 +185,7 @@ function MineItem({ row, onChanged }: { row: MineRow; onChanged: () => void }) {
         )}
       </div>
       {mode === 'rename' && (
-        <form onSubmit={rename} className="mt-2 flex flex-wrap gap-2">
+        <form onSubmit={rename} className="flex flex-wrap gap-2 px-3.5 pb-3">
           <label className="sr-only" htmlFor={`name-${row.id}`}>
             改编谱名字
           </label>
@@ -197,7 +206,7 @@ function MineItem({ row, onChanged }: { row: MineRow; onChanged: () => void }) {
         </form>
       )}
       {mode === 'delete' && (
-        <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-destructive p-3">
+        <div className="mx-3.5 mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-destructive p-3">
           <p className="m-0 flex-1 basis-56 text-sm">删除这个改编谱？原谱不受影响。</p>
           <button
             type="button"
@@ -213,7 +222,7 @@ function MineItem({ row, onChanged }: { row: MineRow; onChanged: () => void }) {
         </div>
       )}
       {error && (
-        <p role="alert" className="m-0 mt-2 text-sm text-destructive">
+        <p role="alert" className="m-0 px-3.5 pb-3 text-sm text-destructive">
           {error}
         </p>
       )}

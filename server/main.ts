@@ -911,11 +911,28 @@ async function handleBand(
     // The words are the band's: any member may put them in or align them.
     await band.setLyrics(orBadRequest(parseSetLyrics(body)), now).catch(asHttp)
   } else if (p === '/api/band/comments/add') {
-    await band.addComment(orBadRequest(parseAddComment(body)), me.id, now).catch(asHttp)
+    const add = orBadRequest(parseAddComment(body))
+    if (add.clipId) {
+      // The voice note is a recording the sender uploaded to this very song.
+      const clip = recordings.get(add.clipId)
+      if (!clip || clip.songId !== add.songId || clip.bandId !== ctx.id || clip.uploadedBy !== me.id)
+        throw new HttpError(404, '找不到这段语音。')
+    }
+    await band.addComment(add, me.id, now).catch(asHttp)
+  } else if (p === '/api/band/comments/ack') {
+    const songId = typeof body.songId === 'string' ? body.songId : ''
+    const commentId = typeof body.commentId === 'string' ? body.commentId : ''
+    await band.ackComment(songId, commentId, me.id).catch(asHttp)
   } else if (p === '/api/band/comments/remove') {
     const songId = typeof body.songId === 'string' ? body.songId : ''
     const commentId = typeof body.commentId === 'string' ? body.commentId : ''
+    const clipId = band
+      .songs()
+      .find((x) => x.id === songId)
+      ?.comments?.find((c) => c.id === commentId)?.clipId
     await band.removeComment(songId, commentId, { id: me.id, moderator: ctx.manager }).catch(asHttp)
+    // The voice note goes with its comment.
+    if (clipId) await recordings.remove(clipId).catch(() => undefined)
   } else if (p === '/api/band/setlist') {
     const ids = orBadRequest(
       parseSetlist(
@@ -1124,6 +1141,14 @@ async function handleUploads(
   }
 }
 
+/** A song's rehearsal recordings without the voice notes that belong to its 小节留言. */
+function rehearsalRecordings(ctx: BandCtx, songId: string) {
+  const clips = new Set(
+    (ctx.store.songs().find((s) => s.id === songId)?.comments ?? []).flatMap((c) => (c.clipId ? [c.clipId] : [])),
+  )
+  return recordings.list(songId).filter((r) => !clips.has(r.id))
+}
+
 /** 排练录音: audio files members upload to a band song (kept in SCORES_DATA/recordings/). */
 async function handleRecordings(
   req: http.IncomingMessage,
@@ -1137,8 +1162,9 @@ async function handleRecordings(
     if (p === '/api/recordings') {
       if (req.method !== 'GET') return sendJson(res, 405, { error: '不支持这种请求方式。' })
       const songId = url.searchParams.get('songId') ?? ''
-      if (!bandWithSong(me, songId)) return notInBand()
-      return sendJson(res, 200, recordings.list(songId))
+      const ctx = bandWithSong(me, songId)
+      if (!ctx) return notInBand()
+      return sendJson(res, 200, rehearsalRecordings(ctx, songId))
     }
     if (p === '/api/recordings/file') {
       if (req.method !== 'GET' && req.method !== 'HEAD')
@@ -1185,7 +1211,7 @@ async function handleRecordings(
         throw new HttpError(403, '只有上传的人、队长或管理员可以删除。')
       await recordings.remove(rec.id)
       bandChanged(ctx.id)
-      return sendJson(res, 200, recordings.list(rec.songId))
+      return sendJson(res, 200, rehearsalRecordings(ctx, rec.songId))
     }
     return sendJson(res, 404, { error: '找不到这个接口。' })
   } catch (err) {
@@ -2530,6 +2556,24 @@ async function main(): Promise<void> {
       log('注意：服务已对网络开放，请只通过 Tailscale 访问，不要在路由器上做端口转发。')
   })
   void refreshLibrary(true)
+}
+
+/**
+ * Ctrl+C, a closed console window or a stop from the system: write what is still waiting
+ * in memory (the practice activity is saved a few seconds late) and then leave.
+ */
+let stopping = false
+async function shutdown(): Promise<void> {
+  if (stopping) return
+  stopping = true
+  // A write that hangs must not keep the window open.
+  const giveUp = setTimeout(() => process.exit(0), 3000)
+  giveUp.unref()
+  await Promise.all([...activityLogs.values()].map((l) => l.flush().catch(() => undefined)))
+  process.exit(0)
+}
+for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP', 'SIGBREAK'] as const) {
+  process.on(signal, () => void shutdown())
 }
 
 // A failure nobody waited for is logged; the server keeps running.

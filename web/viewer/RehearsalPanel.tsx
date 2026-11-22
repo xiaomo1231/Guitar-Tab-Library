@@ -7,6 +7,8 @@
 import { useState } from 'react'
 import type { BandSong, Instrument, RehearsalCommand, RehearsalState, UserInfo } from '../lib/api'
 import type { Section } from '@/songs/rehearsalSections'
+import { Avatar } from '../components/ui'
+import { buttonClass, cx, CTA, PILL, SECTION_TITLE, SELECT as SELECT_BASE } from '../lib/classes'
 
 const OPEN_KEY = 'gl-rehearsal-panel-open'
 
@@ -26,18 +28,19 @@ function writeOpen(open: boolean) {
   }
 }
 
-const BTN =
-  'rounded-md border border-[hsl(var(--border))] px-2.5 py-1 hover:border-[hsl(var(--primary))] disabled:cursor-not-allowed disabled:opacity-50'
-const BTN_ON = 'border-[hsl(var(--primary))] text-[hsl(var(--primary))]'
-const SELECT =
-  'rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2 py-1 disabled:opacity-50'
-const NUM_INPUT =
-  'w-16 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2 py-1'
-const CHIP = 'rounded border border-[hsl(var(--border))] px-1 text-xs'
-const CHIP_PRIMARY =
-  'rounded border border-[hsl(var(--primary))] px-1 text-xs text-[hsl(var(--primary))]'
-const MUTED = 'text-[hsl(var(--muted-foreground))]'
+const BTN = cx(buttonClass('outline'), 'px-3 text-[13px]')
+/** A lit toggle: tinted with the pen, not filled (the play button stays the loud one). */
+const BTN_ON = 'border-primary/45 bg-accent text-primary hover:border-primary/45'
+const SELECT = cx(SELECT_BASE, 'max-w-full bg-background disabled:opacity-50')
+const NUM_INPUT = 'h-11 w-16 rounded-lg border border-border bg-background px-2 text-sm'
+const CHIP = PILL
+const CHIP_PRIMARY = cx(PILL, 'border-primary text-primary')
+const MUTED = 'text-muted-foreground'
 const MONO = { fontFamily: 'var(--font-mono)' } as const
+/** A block inside the panel (指挥, 设备设置). */
+const INNER = 'flex flex-col gap-3 rounded-[12px] border border-border bg-background p-3'
+/** Warning text (没有指挥 / 还没有音箱): an amber that reads on both themes. */
+const WARN = { color: 'hsl(38 92% 50%)' } as const
 
 const PASS_OPTIONS: Array<{ value: string; label: string }> = [
   { value: '2', label: '2 遍' },
@@ -208,14 +211,20 @@ export function RehearsalPanel(props: RehearsalPanelProps) {
     </button>
   )
 
+  // People in the room: band members and anyone else with a device here.
+  const peopleIds = [...new Set([...members.map((m) => m.id), ...userIds])]
+  const onlineIds = new Set(state.devices.filter((d) => d.connected).map((d) => d.userId))
+  const nextSongId = songIndex >= 0 ? setlist[songIndex + 1] : undefined
+  const nextSong = nextSongId ? songs.find((s) => s.id === nextSongId) : undefined
+
   return (
     <section
       aria-label="排练控制"
-      className="mb-2 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3 text-sm"
+      className="mb-2 flex flex-col gap-3 rounded-[14px] border border-border bg-card p-3.5 text-sm"
     >
       {/* header */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-        <span className="font-medium">排练中</span>
+        <span className="font-bold">排练控制</span>
         {!connected && (
           <span className={`inline-flex items-center gap-1.5 ${MUTED}`}>
             <span
@@ -233,18 +242,22 @@ export function RehearsalPanel(props: RehearsalPanelProps) {
         )}
         <span>
           {leaderName ? (
-            <>指挥：{leaderName}</>
-          ) : (
-            <span className="text-amber-600 dark:text-amber-400">没有指挥</span>
-          )}
-        </span>
-        <span>
-          {speakerDevice ? (
             <>
-              音箱：{nameOf(speakerDevice.userId)} 的 {speakerDevice.label}
+              <span className={MUTED}>指挥 </span>
+              {leaderName}
             </>
           ) : (
-            <span className="text-amber-600 dark:text-amber-400">还没有音箱</span>
+            <span style={WARN}>没有指挥</span>
+          )}
+        </span>
+        <span className="min-w-0">
+          {speakerDevice ? (
+            <>
+              <span className={MUTED}>音箱 </span>
+              {nameOf(speakerDevice.userId)} 的 {speakerDevice.label}
+            </>
+          ) : (
+            <span style={WARN}>还没有音箱</span>
           )}
         </span>
         <span className={MUTED} style={MONO}>
@@ -252,7 +265,7 @@ export function RehearsalPanel(props: RehearsalPanelProps) {
         </span>
         <button
           type="button"
-          className={`${BTN} ml-auto`}
+          className={cx(BTN, 'ml-auto')}
           aria-expanded={open}
           onClick={toggleOpen}
         >
@@ -261,10 +274,47 @@ export function RehearsalPanel(props: RehearsalPanelProps) {
       </div>
 
       {open && (
-        <div className="mt-3 flex flex-col gap-3">
+        <div className="flex flex-col gap-3">
+          {/* people: who is here, who is ready */}
+          {peopleIds.length > 0 && (
+            <ul className="m-0 flex list-none flex-wrap gap-1.5 p-0" aria-label="谁在场">
+              {peopleIds.map((id) => {
+                const here = userIds.has(id)
+                const online = onlineIds.has(id)
+                const ready = readyIds.has(id)
+                const stateText = !here ? '没来' : !online ? '离线' : ready ? '就绪' : '未就绪'
+                return (
+                  <li
+                    key={id}
+                    className={cx(
+                      'inline-flex min-h-9 items-center gap-1.5 rounded-[10px] border bg-background py-1 pl-1.5 pr-2.5 text-[13px]',
+                      ready && online ? 'border-success/60' : 'border-border',
+                      !here && 'opacity-60',
+                    )}
+                  >
+                    <Avatar name={nameOf(id)} size={24} />
+                    <span>{nameOf(id)}</span>
+                    <span className={ready && online ? 'text-success' : MUTED}>· {stateText}</span>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+
           {/* conductor controls */}
           {isLeader && (
-            <div className="flex flex-col gap-3 rounded-md border border-[hsl(var(--border))] p-2.5">
+            <div className={INNER}>
+              <button
+                type="button"
+                className={CTA}
+                disabled={songIndex < 0 || songIndex >= setlist.length - 1}
+                onClick={() => {
+                  const id = setlist[songIndex + 1]
+                  if (id) onCommand({ type: 'song', songId: id })
+                }}
+              >
+                {nextSong ? `下一首：${nextSong.title}` : '下一首 ▶'}
+              </button>
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
@@ -277,21 +327,10 @@ export function RehearsalPanel(props: RehearsalPanelProps) {
                 >
                   ◀ 上一首
                 </button>
-                <button
-                  type="button"
-                  className={BTN}
-                  disabled={songIndex < 0 || songIndex >= setlist.length - 1}
-                  onClick={() => {
-                    const id = setlist[songIndex + 1]
-                    if (id) onCommand({ type: 'song', songId: id })
-                  }}
-                >
-                  下一首 ▶
-                </button>
-                <label className="flex items-center gap-1.5">
+                <label className="flex min-w-0 flex-1 items-center gap-1.5 sm:flex-none">
                   <span className="sr-only">选择曲目</span>
                   <select
-                    className={SELECT}
+                    className={cx(SELECT, 'w-full sm:w-auto')}
                     value={state.songId ?? ''}
                     disabled={setlist.length === 0}
                     onChange={(e) => {
@@ -312,7 +351,7 @@ export function RehearsalPanel(props: RehearsalPanelProps) {
                 </label>
                 <button
                   type="button"
-                  className={`${BTN} ${state.countIn ? BTN_ON : ''}`}
+                  className={cx(BTN, state.countIn && BTN_ON)}
                   aria-pressed={state.countIn}
                   onClick={() => onCommand({ type: 'countIn', on: !state.countIn })}
                 >
@@ -321,22 +360,29 @@ export function RehearsalPanel(props: RehearsalPanelProps) {
               </div>
 
               {sections.length > 0 && (
-                <div className="flex flex-wrap gap-1.5" role="group" aria-label="段落">
-                  {sections.map((s, i) => (
-                    <button
-                      key={`${s.startBar}-${i}`}
-                      type="button"
-                      className={`${BTN} px-2 py-0.5 text-xs ${i === curSection ? BTN_ON : ''}`}
-                      aria-current={i === curSection ? 'true' : undefined}
-                      onClick={() => onSeekBar(s.startBar)}
-                    >
-                      {s.name} {s.startBar}
-                    </button>
-                  ))}
+                <div className="flex flex-col gap-2">
+                  <h3 className={SECTION_TITLE}>跳到段落</h3>
+                  <div className="flex flex-wrap gap-1.5" role="group" aria-label="段落">
+                    {sections.map((s, i) => (
+                      <button
+                        key={`${s.startBar}-${i}`}
+                        type="button"
+                        className={cx(
+                          'inline-flex min-h-11 items-center rounded-full border border-border px-3 text-xs transition-colors hover:bg-[hsl(var(--raised))] sm:min-h-9',
+                          i === curSection && BTN_ON,
+                        )}
+                        aria-current={i === curSection ? 'true' : undefined}
+                        onClick={() => onSeekBar(s.startBar)}
+                      >
+                        {s.name} {s.startBar}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
 
               <div className="flex flex-col gap-2">
+                <h3 className={SECTION_TITLE}>循环一段</h3>
                 <div className="flex flex-wrap items-center gap-2">
                   <label className="flex items-center gap-1.5">
                     <span>从</span>
@@ -444,13 +490,13 @@ export function RehearsalPanel(props: RehearsalPanelProps) {
                   )}
                 </div>
                 {loop && (
-                  <p style={MONO} className="text-xs">
+                  <p style={MONO} className="m-0 text-xs text-primary">
                     正在循环 {loop.startBar}–{loop.endBar} 小节 · {passText} · {rampText}
                   </p>
                 )}
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
                 <button
                   type="button"
                   className={BTN}
@@ -460,7 +506,7 @@ export function RehearsalPanel(props: RehearsalPanelProps) {
                 </button>
                 <button
                   type="button"
-                  className={`${BTN} text-destructive`}
+                  className={cx(BTN, 'ml-auto text-destructive hover:border-destructive')}
                   onClick={() => {
                     if (window.confirm('结束这次排练？所有人的排练都会结束。')) {
                       onCommand({ type: 'end' })
@@ -475,15 +521,15 @@ export function RehearsalPanel(props: RehearsalPanelProps) {
 
           {/* not the conductor: one-tap request */}
           {!isLeader && (
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-col gap-1.5">
               <button
                 type="button"
-                className={BTN}
+                className={CTA}
                 onClick={() =>
                   onCommand({ type: 'request', bar: requestBar, tick: tickOfBar(requestBar) })
                 }
               >
-                提议从第 {requestBar} 小节来
+                请从第 {requestBar} 小节再来
               </button>
               <span className={`${MUTED} text-xs`}>在谱上点一个小节可以选别的位置</span>
             </div>
@@ -491,19 +537,26 @@ export function RehearsalPanel(props: RehearsalPanelProps) {
 
           {/* requests: 从第 X 小节再来 */}
           {state.requests.length > 0 && (
-            <ul className="flex flex-col gap-1.5" aria-label="从第几小节再来的提议">
+            <ul
+              className="m-0 flex list-none flex-col gap-1.5 p-0"
+              aria-label="从第几小节再来的提议"
+            >
               {state.requests.map((r) => {
                 const mine = r.userId === me.id
                 return (
-                  <li key={r.id} className="flex flex-wrap items-center gap-2">
-                    <span>
-                      {nameOf(r.userId)} 提议从第 {r.bar} 小节来
+                  <li
+                    key={r.id}
+                    className="flex flex-wrap items-center gap-2 rounded-[12px] border border-border bg-background px-3 py-2"
+                  >
+                    <Avatar name={nameOf(r.userId)} size={28} />
+                    <span className="min-w-0 flex-1">
+                      {nameOf(r.userId)} 提议从第 <b>{r.bar}</b> 小节来
                     </span>
                     {isLeader && (
                       <>
                         <button
                           type="button"
-                          className={BTN}
+                          className={cx(buttonClass('primary'), 'px-3 text-[13px]')}
                           onClick={() => {
                             onPlayFromBar(r.bar)
                             onCommand({ type: 'dismiss', requestId: r.id })
@@ -558,7 +611,7 @@ export function RehearsalPanel(props: RehearsalPanelProps) {
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              className={`${BTN} ${deviceOpen ? BTN_ON : ''}`}
+              className={cx(BTN, deviceOpen && BTN_ON)}
               aria-expanded={deviceOpen}
               aria-controls="rehearsal-device-settings"
               onClick={() => setDeviceOpen((v) => !v)}
@@ -569,13 +622,13 @@ export function RehearsalPanel(props: RehearsalPanelProps) {
           </div>
 
           {deviceOpen && (
-            <div id="rehearsal-device-settings" className="flex flex-col gap-3">
+            <div id="rehearsal-device-settings" className={INNER}>
               <div className="flex flex-wrap items-center gap-2">
                 {!noSpeaker && speakerButton}
                 {!isSpeaker && (
                   <button
                     type="button"
-                    className={`${BTN} ${myDevice?.audible ? BTN_ON : ''}`}
+                    className={cx(BTN, myDevice?.audible && BTN_ON)}
                     aria-pressed={myDevice?.audible ?? false}
                     disabled={!myDevice}
                     onClick={() => onCommand({ type: 'device', audible: !myDevice?.audible })}
@@ -593,7 +646,7 @@ export function RehearsalPanel(props: RehearsalPanelProps) {
 
               {/* devices */}
               {state.devices.length > 0 && (
-                <ul className="flex flex-col gap-1" aria-label="设备">
+                <ul className="m-0 flex list-none flex-col p-0" aria-label="设备">
                   {state.devices.map((d) => {
                     const isThisLeader = d.userId === state.leaderId
                     const isThisSpeaker = d.deviceId === state.speakerDevice
@@ -602,15 +655,13 @@ export function RehearsalPanel(props: RehearsalPanelProps) {
                     if (d.driftMs !== null && drift !== null) {
                       if (Math.abs(d.driftMs) < 50) {
                         driftNode = (
-                          <span className="text-[hsl(var(--primary))]" style={MONO}>
+                          <span className="text-success" style={MONO}>
                             同步
                           </span>
                         )
                       } else if (Math.abs(d.driftMs) < 120) {
                         driftNode = (
-                          <span className="text-amber-600 dark:text-amber-400" style={MONO}>
-                            差 {drift} ms
-                          </span>
+                          <span style={{ ...MONO, ...WARN }}>差 {drift} ms</span>
                         )
                       } else {
                         driftNode = (
@@ -623,8 +674,9 @@ export function RehearsalPanel(props: RehearsalPanelProps) {
                     return (
                       <li
                         key={d.deviceId}
-                        className="flex flex-wrap items-center gap-x-2 gap-y-0.5"
+                        className="flex min-h-11 flex-wrap items-center gap-x-2 gap-y-0.5 border-t border-border py-1.5 first:border-t-0"
                       >
+                        <Avatar name={nameOf(d.userId)} size={22} />
                         <span>
                           {nameOf(d.userId)} · {d.label}
                         </span>
@@ -633,7 +685,7 @@ export function RehearsalPanel(props: RehearsalPanelProps) {
                         {isThisSpeaker && <span className={CHIP_PRIMARY}>音箱</span>}
                         {!isThisSpeaker && d.audible && <span className={CHIP}>耳机</span>}
                         {d.ready && (
-                          <span className="text-[hsl(var(--primary))]" aria-label="已准备好">
+                          <span className="text-success" aria-label="已准备好">
                             ✓
                           </span>
                         )}
@@ -654,7 +706,7 @@ export function RehearsalPanel(props: RehearsalPanelProps) {
       )}
 
       {error && (
-        <p role="alert" className="mt-2 text-destructive">
+        <p role="alert" className="m-0 text-destructive">
           {error}
         </p>
       )}
