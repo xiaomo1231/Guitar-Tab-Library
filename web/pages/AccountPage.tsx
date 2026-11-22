@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import type { Instrument } from '@/songs/scoreServerTypes'
 import { api, errorText } from '../lib/api'
-import { buttonClass, cx, SELECT } from '../lib/classes'
+import { buttonClass, cx, LIST, LIST_ROW, SELECT } from '../lib/classes'
 import { INSTRUMENT_LABELS, setMe, useMe } from '../lib/session'
 import { HREF_DAILY, HREF_FAVORITES, HREF_MINE, HREF_USERS } from '../lib/route'
 import { useFavorites } from '../lib/favorites'
@@ -15,14 +15,11 @@ const INPUT =
 
 const MIN_PASSWORD = 6
 
-/** A grouped list of rows on a raised surface. */
-const LIST = 'overflow-hidden rounded-[14px] border border-border bg-card'
-
 function RowLink({ href, label, hint }: { href: string; label: string; hint: string }) {
   return (
     <Link
       href={href}
-      className="flex min-h-[60px] items-center gap-3 border-t border-border px-3.5 py-2 transition-colors first:border-t-0 hover:bg-[hsl(var(--raised))]"
+      className={LIST_ROW}
     >
       <span className="min-w-0 flex-1">
         <b className="block truncate font-bold">{label}</b>
