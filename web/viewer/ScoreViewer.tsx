@@ -1531,9 +1531,28 @@ export function ScoreViewer({
                 }
                 playing={rehState.playing}
                 role={reh.isSpeaker ? '你是音箱' : reh.sounding ? '耳机出声' : '静音看谱'}
+                light={reh.light}
               />
             </div>
           </div>
+          {reh.stalled && (
+            <div className="gutter mx-auto mb-2 w-full max-w-[1180px]">
+              <Notice tone="muted">
+                音箱掉线了，音乐已暂停在这里。
+                {!rehState.devices.some((d) => d.deviceId === rehState.speakerDevice && d.connected) ? (
+                  <button
+                    type="button"
+                    className="ml-2 underline underline-offset-4"
+                    onClick={() => void reh.conn.send({ type: 'speaker', take: true }).catch(() => undefined)}
+                  >
+                    用这台设备当音箱
+                  </button>
+                ) : (
+                  ' 音箱回来了，指挥按播放就能继续。'
+                )}
+              </Notice>
+            </div>
+          )}
           <div className="gutter mx-auto mb-2 w-full max-w-[1180px]">
             <RehearsalPanel
               state={rehState}

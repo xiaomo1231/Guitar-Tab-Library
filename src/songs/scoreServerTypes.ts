@@ -286,6 +286,8 @@ export interface RehearsalDevice {
   latencyMs: number
   /** Last measured distance from the reference position in ms (null = not measured / not playing). */
   driftMs: number | null
+  /** Has an open stream right now (false while it is away: locked phone, lost network). */
+  connected: boolean
 }
 
 /** A conductor's loop: bars, passes and the speed ladder (爬速度). */
@@ -339,6 +341,33 @@ export interface RehearsalState {
   /** Bumped on every change of the transport, song or loop (not on device status changes). */
   seq: number
   startedAt: number
+  /**
+   * The reference device's last position report of this run (same seq and pass), or null:
+   * a device that joins late starts from it instead of waiting for the next report.
+   */
+  clock: RehearsalClock | null
+  /**
+   * The music was stopped by the room, not by the conductor (the 音箱 went away): every
+   * player pauses where it is instead of going back to `tick`.
+   */
+  stalled: boolean
+}
+
+/**
+ * The device whose player is the reference of a run: the 音箱, else the conductor's device,
+ * else the first device; a device that is away (no open stream) is passed over, so the
+ * others keep a reference while it is gone.
+ */
+export function referenceDeviceId(state: {
+  speakerDevice: string | null
+  leaderDevice: string | null
+  devices: readonly { deviceId: string; connected: boolean }[]
+}): string | null {
+  const here = (id: string | null) =>
+    id !== null && state.devices.some((d) => d.deviceId === id && d.connected)
+  if (here(state.speakerDevice)) return state.speakerDevice
+  if (here(state.leaderDevice)) return state.leaderDevice
+  return state.devices.find((d) => d.connected)?.deviceId ?? null
 }
 
 /**

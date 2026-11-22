@@ -15,12 +15,18 @@ import type {
   RehearsalRequest,
   RehearsalState,
 } from '../src/songs/scoreServerTypes'
+import { referenceDeviceId } from '../src/songs/scoreServerTypes'
 import type { ParseResult } from './favorites'
 
 /** Time between a play / seek command and the shared start, so every device receives it first. */
 export const START_DELAY_MS = 1500
 /** Gap between the end of one loop pass and the start of the next. */
-export const PASS_GAP_MS = 1500
+export const PASS_GAP_MS = 600
+/**
+ * How long the 音箱 may be without a stream while the music plays before the room pauses:
+ * its sound has stopped, and the screens should not scroll on in silence.
+ */
+export const SPEAKER_GRACE_MS = 4000
 /** How long a leader may be absent before the lead is released. */
 export const LEADER_GRACE_MS = 60000
 /**
@@ -254,6 +260,8 @@ export function freshRehearsal(): RehearsalState {
     devices: [],
     seq: 0,
     startedAt: 0,
+    clock: null,
+    stalled: false,
   }
 }
 
@@ -303,10 +311,13 @@ export function applyRehearsal(
       d.driftMs === null ? d : { ...d, driftMs: null },
     ),
     seq: state.seq + 1,
+    // A new run: the last position report and a stall belong to the one before.
+    clock: null,
+    stalled: false,
   })
   const isLeader = state.leaderId === actor.userId
   const leaderHasDevice = (userId: string) => state.devices.some((d) => d.userId === userId)
-  const referenceDevice = state.speakerDevice !== null ? state.speakerDevice : state.leaderDevice
+  const referenceDevice = referenceDeviceId(state)
   // Device ids are visible to everyone: a device-bound command must come from its owner.
   const listedDevice = state.devices.find((d) => d.deviceId === actor.deviceId)
   if (
@@ -377,7 +388,7 @@ export function applyRehearsal(
         const present =
           state.speakerDevice !== null &&
           state.speakerDevice !== actor.deviceId &&
-          state.devices.some((d) => d.deviceId === state.speakerDevice)
+          state.devices.some((d) => d.deviceId === state.speakerDevice && d.connected)
         if ((present || state.playing) && !isLeader && !actor.manager)
           return err('只有队长或指挥可以在播放时或已有音箱时更换音箱。', 403)
         if (!inRoom) return notInRoom()
@@ -488,12 +499,9 @@ export function applyRehearsal(
         return err('只有音箱可以报告播放进度。', 403)
       if (cmd.seq !== state.seq || cmd.pass !== state.pass || !state.playing)
         return done(state, 'none')
-      return done(state, 'none', {
-        seq: cmd.seq,
-        pass: cmd.pass,
-        timeMs: cmd.timeMs,
-        at: cmd.at,
-      })
+      const clock = { seq: cmd.seq, pass: cmd.pass, timeMs: cmd.timeMs, at: cmd.at }
+      // Kept for devices that join later; the others get it as its own event.
+      return done({ ...state, clock }, 'none', clock)
     }
     case 'device': {
       const idx = state.devices.findIndex((d) => d.deviceId === actor.deviceId)
@@ -553,6 +561,8 @@ export class RehearsalHub {
   private readonly deviceGraces = new Map<string, ReturnType<typeof setTimeout>>()
   private leaderGrace: ReturnType<typeof setTimeout> | null = null
   private leaderGraceFor: string | null = null
+  private speakerGrace: ReturnType<typeof setTimeout> | null = null
+  private speakerGraceFor: string | null = null
   private bandVersion = 0
 
   /** Opens an SSE stream for one device of a band member. */
@@ -596,6 +606,16 @@ export class RehearsalHub {
     if ('error' in result) return result
     this.room = result.state
     this.reconcileLeaderGrace()
+    // Play pressed while the 音箱 is away: it gets the same short wait as one that leaves.
+    const speaker = this.room.speakerDevice
+    if (
+      result.kind === 'transport' &&
+      this.room.playing &&
+      speaker !== null &&
+      this.speakerGraceFor !== speaker &&
+      ![...this.conns].some((c) => c.deviceId === speaker)
+    )
+      this.startSpeakerGrace()
     if (result.kind !== 'none') this.broadcast()
     if (result.clock) this.send(`event: clock\ndata: ${JSON.stringify(result.clock)}\n\n`)
     return result
@@ -657,6 +677,7 @@ export class RehearsalHub {
     if (this.leaderGrace) clearTimeout(this.leaderGrace)
     this.leaderGrace = null
     this.leaderGraceFor = null
+    this.clearSpeakerGrace()
     for (const conn of this.conns) this.closeConn(conn)
     this.conns.clear()
     this.room = freshRehearsal()
@@ -669,11 +690,12 @@ export class RehearsalHub {
       clearTimeout(pending)
       this.deviceGraces.delete(deviceId)
     }
+    if (this.speakerGraceFor === deviceId) this.clearSpeakerGrace()
     const cleanLabel = label.trim().slice(0, MAX_LABEL)
     const known = this.room.devices.some((d) => d.deviceId === deviceId)
     const devices: RehearsalDevice[] = known
       ? this.room.devices.map((d) =>
-          d.deviceId === deviceId ? { ...d, userId, label: cleanLabel } : d,
+          d.deviceId === deviceId ? { ...d, userId, label: cleanLabel, connected: true } : d,
         )
       : [
           ...this.room.devices,
@@ -685,6 +707,7 @@ export class RehearsalHub {
             audible: false,
             latencyMs: 0,
             driftMs: null,
+            connected: true,
           },
         ]
     let leaderDevice = this.room.leaderDevice
@@ -717,6 +740,40 @@ export class RehearsalHub {
     const timer = setTimeout(() => this.removeDevice(conn.deviceId), DEVICE_GRACE_MS)
     timer.unref()
     this.deviceGraces.set(conn.deviceId, timer)
+    // Shown as away at once (the others take another reference meanwhile).
+    this.room = {
+      ...this.room,
+      devices: this.room.devices.map((d) =>
+        d.deviceId === conn.deviceId ? { ...d, connected: false } : d,
+      ),
+    }
+    if (this.room.speakerDevice === conn.deviceId && this.room.playing) this.startSpeakerGrace()
+    this.broadcast()
+  }
+
+  /** The 音箱 lost its stream while playing: without it back soon, the room pauses in place. */
+  private startSpeakerGrace(): void {
+    this.clearSpeakerGrace()
+    const deviceId = this.room.speakerDevice
+    if (deviceId === null) return
+    this.speakerGraceFor = deviceId
+    const timer = setTimeout(() => {
+      this.speakerGrace = null
+      this.speakerGraceFor = null
+      const s = this.room
+      if (s.speakerDevice !== deviceId || !s.playing) return
+      if ([...this.conns].some((c) => c.deviceId === deviceId)) return
+      this.room = { ...s, playing: false, stalled: true, clock: null, seq: s.seq + 1 }
+      this.broadcast()
+    }, SPEAKER_GRACE_MS)
+    timer.unref()
+    this.speakerGrace = timer
+  }
+
+  private clearSpeakerGrace(): void {
+    if (this.speakerGrace) clearTimeout(this.speakerGrace)
+    this.speakerGrace = null
+    this.speakerGraceFor = null
   }
 
   /** Removes a device whose streams stayed closed through the grace period. */
@@ -728,7 +785,14 @@ export class RehearsalHub {
     const devices = s.devices.filter((d) => d.deviceId !== deviceId)
     let next: RehearsalState = { ...s, devices }
     if (s.speakerDevice === deviceId)
-      next = { ...next, speakerDevice: null, playing: false, seq: s.seq + 1 }
+      next = {
+        ...next,
+        speakerDevice: null,
+        playing: false,
+        stalled: s.playing || s.stalled,
+        clock: null,
+        seq: s.seq + 1,
+      }
     if (s.leaderDevice === deviceId && s.leaderId !== null) {
       const other = devices.find((d) => d.userId === s.leaderId)
       if (other) next = { ...next, leaderDevice: other.deviceId }

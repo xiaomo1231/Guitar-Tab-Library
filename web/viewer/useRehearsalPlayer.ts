@@ -24,9 +24,11 @@ import {
   makesSound,
   playerShiftMs,
   referenceDevice,
+  syncLight,
+  type SyncLight,
 } from './rehearsalTiming'
 
-const CLOCK_EVERY_MS = 2000
+const CLOCK_EVERY_MS = 1000
 const DRIFT_REPORT_MS = 5000
 const CORRECT_GAP_MS = 2500
 /** No clock reports or corrections until this long after the count-in (the player settles). */
@@ -73,6 +75,10 @@ export interface RehearsalPlayer {
   isSpeaker: boolean
   /** This device makes sound (音箱, or 耳机出声). */
   sounding: boolean
+  /** 同步 light of this device: in step, being put back in place, or away from the room. */
+  light: SyncLight
+  /** The music stopped because the 音箱 went away (it is paused where it was). */
+  stalled: boolean
   /** Big count-in digits on the screen: when (local ms), beats and beat length. */
   countIn: { at: number; beats: number; beatMs: number } | null
   /** Call from playerPositionChanged with the player's position (ms). */
@@ -203,7 +209,8 @@ export function useRehearsalPlayer(opts: {
   /** Count-in of a run starting at `tick`: beats of that bar at its tempo and the speed. */
   const countInOf = useCallback(
     (s: RehearsalState): { beats: number; beatMs: number } | null => {
-      if (!s.countIn || !score) return null
+      // Later passes of a loop follow straight on: the bars before are the count-in.
+      if (!s.countIn || s.pass > 1 || !score) return null
       const bars = score.masterBars
       const i = Math.max(0, barAtTick(bars, s.tick) - 1)
       const beats = bars[i]?.timeSignatureNumerator ?? 4
@@ -235,7 +242,8 @@ export function useRehearsalPlayer(opts: {
       a.playbackRange = { startTick: s.loop.startTick, endTick: s.loop.endTick } as never
       a.isLooping = false
     } else if (a.playbackRange) a.playbackRange = null
-    a.countInVolume = s.countIn ? 1 : 0
+    const countInOn = s.countIn && s.pass === 1
+    a.countInVolume = countInOn ? 1 : 0
 
     const speedOnly =
       before &&
@@ -257,7 +265,8 @@ export function useRehearsalPlayer(opts: {
     if (!s.playing) {
       run.current = null
       if (a.playerState === 1) a.pause()
-      a.tickPosition = s.tick
+      // Stopped by the room (the 音箱 went away): everyone stays where the music was.
+      if (!s.stalled) a.tickPosition = s.tick
       return
     }
     const start = localStartAt(s, conn.deviceId, offsetRef.current)
@@ -279,11 +288,23 @@ export function useRehearsalPlayer(opts: {
       if (ci) setCountIn({ at: start, ...ci })
       startTimer.current = setTimeout(go, wait)
     } else {
-      // Joined late: start now without a count-in; the next clock report puts us in place.
+      // Joined late (or back from a locked screen): start now without a count-in, at the
+      // place the room is at by the reference's last report; without one yet (the run has
+      // just begun) from its start, and the next report puts us in place.
       a.countInVolume = 0
-      go()
+      const c = s.clock
+      const at =
+        c && c.seq === s.seq && c.pass === s.pass
+          ? Math.max(0, expectedTimeMs(c, serverNow(), playerShiftMs(s, conn.deviceId)))
+          : null
+      if (at === null) go()
+      else {
+        a.timePosition = at
+        a.play()
+        sample.current = { timeMs: at, at: Date.now() }
+      }
       window.setTimeout(() => {
-        if (api.current) api.current.countInVolume = s.countIn ? 1 : 0
+        if (api.current) api.current.countInVolume = countInOn ? 1 : 0
       }, 300)
       run.current = { start: Date.now() - 10_000, countIn: 0 }
     }
@@ -323,6 +344,8 @@ export function useRehearsalPlayer(opts: {
 
   const lastCorrect = useRef(0)
   const lastDriftReport = useRef(0)
+  const [drift, setDrift] = useState<number | null>(null)
+  useEffect(() => setDrift(null), [state?.seq, here])
   useEffect(() => {
     if (!here) return
     return onRehearsalClock((c) => {
@@ -335,6 +358,7 @@ export function useRehearsalPlayer(opts: {
       if (own === null) return
       const expected = expectedTimeMs(c, serverNow(), playerShiftMs(s, conn.deviceId))
       const drift = Math.round(own - expected)
+      setDrift(drift)
       const now = Date.now()
       if (now - lastDriftReport.current > DRIFT_REPORT_MS) {
         lastDriftReport.current = now
@@ -363,6 +387,16 @@ export function useRehearsalPlayer(opts: {
     return true
   }, [conn.deviceId])
 
+  // 就位: told by itself once this song's score and player are in (nobody has to tap it).
+  const readyFor = useRef<string | null>(null)
+  useEffect(() => {
+    if (!here || !ready || !score || !me || !state) return
+    const key = `${state.startedAt}:${state.songId}`
+    if (readyFor.current === key) return
+    readyFor.current = key
+    if (!me.ready) sendRehearsalQuietly({ type: 'device', ready: true })
+  }, [here, ready, score, me, state])
+
   const movedTo = state?.active && state.songId && state.songId !== songId ? state.songId : null
   return {
     conn,
@@ -372,6 +406,8 @@ export function useRehearsalPlayer(opts: {
     isLeader,
     isSpeaker,
     sounding,
+    light: syncLight(conn.connected, Boolean(state?.playing), drift),
+    stalled: Boolean(here && state?.stalled),
     countIn,
     onPosition,
     onFinished,

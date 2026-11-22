@@ -4,6 +4,12 @@
  */
 import type { ReactNode } from 'react'
 
+const LIGHTS = {
+  ok: { color: '#22c55e', text: '已同步' },
+  fixing: { color: '#f59e0b', text: '正在对齐' },
+  away: { color: '#ef4444', text: '掉线，重连中' },
+} as const
+
 export function RehearsalStrip(props: {
   songTitle: string
   /** 1-based position in today's setlist, and its length (0 = not in the setlist). */
@@ -19,6 +25,8 @@ export function RehearsalStrip(props: {
   playing: boolean
   /** e.g. '你是音箱' / '静音看谱' / '耳机出声'. */
   role: string
+  /** 同步 light of this device. */
+  light: 'ok' | 'fixing' | 'away'
   /** Optional right-side content (buttons from the parent). */
   children?: ReactNode
 }) {
@@ -81,6 +89,18 @@ export function RehearsalStrip(props: {
 
       <span className="rounded-full border border-[hsl(var(--primary))] px-2 py-0.5 text-xs text-[hsl(var(--primary))]">
         {props.role}
+      </span>
+
+      <span
+        className="flex items-center gap-1.5 text-xs text-[hsl(var(--muted-foreground))]"
+        role="status"
+      >
+        <span
+          aria-hidden="true"
+          className="inline-block h-2 w-2 shrink-0 rounded-full"
+          style={{ background: LIGHTS[props.light].color }}
+        />
+        {LIGHTS[props.light].text}
       </span>
 
       {props.children && (

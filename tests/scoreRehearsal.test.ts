@@ -15,6 +15,7 @@ import {
   LEADER_GRACE_MS,
   PASS_GAP_MS,
   RehearsalHub,
+  SPEAKER_GRACE_MS,
   START_DELAY_MS,
   applyRehearsal,
   freshRehearsal,
@@ -36,6 +37,7 @@ const dev = (actor: Actor, over: Partial<RehearsalDevice> = {}): RehearsalDevice
   audible: false,
   latencyMs: 0,
   driftMs: null,
+  connected: true,
   ...over,
 })
 
@@ -308,6 +310,17 @@ describe('applyRehearsal: lead and speaker', () => {
     expect(unwrap(run(gone, B, { type: 'speaker', take: true })).speakerDevice).toBe(B.deviceId)
   })
 
+  it('lets a member take the speaker from a listed speaker that is not connected', () => {
+    const away = started({
+      speakerDevice: A.deviceId,
+      devices: [dev(A, { connected: false }), dev(B)],
+    })
+    const took = unwrap(run(away, B, { type: 'speaker', take: true }))
+    expect(took.speakerDevice).toBe(B.deviceId)
+    // Still refused while the music plays.
+    expect(errOf({ ...away, playing: true }, B, { type: 'speaker', take: true }).status).toBe(403)
+  })
+
   it('gives no role to a device that is not in the room', () => {
     const ghost: Actor = { userId: 'a', deviceId: 'dev-ghost-000', manager: true }
     expect(errOf(room(), ghost, { type: 'start', setlist: ['s1'] }).status).toBe(409)
@@ -491,14 +504,67 @@ describe('applyRehearsal: passEnded', () => {
 })
 
 describe('applyRehearsal: clock', () => {
-  it('accepts the position from the reference device and returns it', () => {
+  it('accepts the position from the reference device, stores it and returns it', () => {
     const s = unwrap(run(started(), A, { type: 'play', tick: 0, speedPct: 100 }))
+    expect(s.clock).toBe(null)
     const clock = { type: 'clock' as const, seq: s.seq, pass: 1, timeMs: 1234, at: 5000 }
     const r = run(s, A, clock)
-    expect(r).toEqual({
-      state: s,
-      kind: 'none',
-      clock: { seq: s.seq, pass: 1, timeMs: 1234, at: 5000 } satisfies RehearsalClock,
+    const report = { seq: s.seq, pass: 1, timeMs: 1234, at: 5000 } satisfies RehearsalClock
+    expect(r).toEqual({ state: { ...s, clock: report }, kind: 'none', clock: report })
+  })
+
+  it('clears the stored clock and a stall on every transport change', () => {
+    const s = unwrap(run(started(), A, { type: 'play', tick: 0, speedPct: 100 }))
+    const clocked = unwrap(run(s, A, { type: 'clock', seq: s.seq, pass: 1, timeMs: 10, at: 20 }))
+    expect(clocked.clock).not.toBe(null)
+    for (const cmd of [
+      { type: 'pause', tick: 0 },
+      { type: 'seek', tick: 0 },
+      { type: 'speed', speedPct: 90 },
+      { type: 'play', tick: 0, speedPct: 100 },
+    ] as RehearsalCommand[]) {
+      const next = unwrap(run({ ...clocked, stalled: true }, A, cmd))
+      expect(next.seq).toBe(clocked.seq + 1)
+      expect(next).toMatchObject({ clock: null, stalled: false })
+    }
+  })
+
+  it('falls back to the leader device when the speaker is not connected', () => {
+    const s = unwrap(
+      run(
+        started({
+          speakerDevice: B.deviceId,
+          devices: [dev(A), dev(B, { connected: false })],
+        }),
+        A,
+        { type: 'play', tick: 0, speedPct: 100 },
+      ),
+    )
+    const cmd = { type: 'clock' as const, seq: s.seq, pass: 1, timeMs: 7, at: 8 }
+    expect(errOf(s, B, cmd)).toEqual({ error: '只有音箱可以报告播放进度。', status: 403 })
+    const r = run(s, A, cmd)
+    expect('clock' in r && r.clock).toEqual({ seq: s.seq, pass: 1, timeMs: 7, at: 8 })
+    // Once the speaker is back, it is the reference again.
+    const back = { ...s, devices: [dev(A), dev(B)] }
+    expect(errOf(back, A, cmd).status).toBe(403)
+    expect(run(back, B, cmd)).toMatchObject({ kind: 'none', clock: { timeMs: 7 } })
+  })
+
+  it('accepts pass reports from the leader device while the speaker is away', () => {
+    const s = unwrap(
+      run(
+        started({
+          speakerDevice: B.deviceId,
+          loop: loop({ passes: 2 }),
+          devices: [dev(A), dev(B, { connected: false })],
+        }),
+        A,
+        { type: 'play', tick: 0, speedPct: 100 },
+      ),
+    )
+    expect(errOf(s, B, { type: 'passEnded', seq: s.seq, pass: 1 }).status).toBe(403)
+    expect(run(s, A, { type: 'passEnded', seq: s.seq, pass: 1 })).toMatchObject({
+      kind: 'transport',
     })
   })
 
@@ -756,7 +822,99 @@ describe('RehearsalHub', () => {
     expect(hub.state()).toMatchObject({ speakerDevice: B.deviceId, playing: true })
     b.req.emit('close')
     vi.advanceTimersByTime(DEVICE_GRACE_MS)
-    expect(hub.state()).toMatchObject({ speakerDevice: null, playing: false })
+    expect(hub.state()).toMatchObject({
+      speakerDevice: null,
+      playing: false,
+      stalled: true,
+      clock: null,
+    })
+  })
+
+  /** A and B connected, started by A, B is the 音箱 and the music plays. */
+  function playingWithSpeakerB() {
+    const a = fakeStream()
+    const b = fakeStream()
+    hub!.subscribe('a', A.deviceId, 'iPad', a.req, a.res as never)
+    hub!.subscribe('b', B.deviceId, 'phone', b.req, b.res as never)
+    hub!.command(A, { type: 'start', setlist: ['s1'] }, ctx())
+    hub!.command(B, { type: 'speaker', take: true }, ctx())
+    hub!.command(A, { type: 'play', tick: 0, speedPct: 100 }, ctx())
+    const seq = hub!.state().seq
+    hub!.command(B, { type: 'clock', seq, pass: 1, timeMs: 100, at: 200 }, ctx())
+    expect(hub!.state()).toMatchObject({ speakerDevice: B.deviceId, playing: true })
+    expect(hub!.state().clock).not.toBe(null)
+    return { a, b }
+  }
+
+  it('marks a device away at once when its last stream closes, and back on reconnect', () => {
+    vi.useFakeTimers()
+    hub = new RehearsalHub()
+    const a = fakeStream()
+    const b1 = fakeStream()
+    const b2 = fakeStream()
+    hub.subscribe('a', A.deviceId, 'iPad', a.req, a.res as never)
+    hub.subscribe('b', B.deviceId, 'phone', b1.req, b1.res as never)
+    hub.subscribe('b', B.deviceId, 'phone', b2.req, b2.res as never)
+    const bOf = (s: RehearsalState) => s.devices.find((d) => d.deviceId === B.deviceId)
+    expect(bOf(hub.state())?.connected).toBe(true)
+
+    b1.req.emit('close')
+    expect(bOf(hub.state())?.connected).toBe(true)
+    b2.req.emit('close')
+    expect(bOf(hub.state())?.connected).toBe(false)
+    expect(bOf(lastEvent<RehearsalState>(a.res, 'rehearsal'))?.connected).toBe(false)
+
+    vi.advanceTimersByTime(DEVICE_GRACE_MS - 1)
+    const back = fakeStream()
+    hub.subscribe('b', B.deviceId, 'phone', back.req, back.res as never)
+    expect(bOf(hub.state())?.connected).toBe(true)
+    expect(bOf(lastEvent<RehearsalState>(a.res, 'rehearsal'))?.connected).toBe(true)
+    vi.advanceTimersByTime(DEVICE_GRACE_MS * 2)
+    expect(hub.state().devices).toHaveLength(2)
+  })
+
+  it('pauses the room in place when the 音箱 stays away past SPEAKER_GRACE_MS', () => {
+    vi.useFakeTimers()
+    hub = new RehearsalHub()
+    const { a, b } = playingWithSpeakerB()
+    const seq = hub.state().seq
+    b.req.emit('close')
+    vi.advanceTimersByTime(SPEAKER_GRACE_MS - 1)
+    expect(hub.state()).toMatchObject({ playing: true, stalled: false, seq })
+    vi.advanceTimersByTime(1)
+    expect(hub.state()).toMatchObject({
+      playing: false,
+      stalled: true,
+      clock: null,
+      seq: seq + 1,
+      speakerDevice: B.deviceId,
+    })
+    expect(lastEvent<RehearsalState>(a.res, 'rehearsal')).toMatchObject({
+      playing: false,
+      stalled: true,
+    })
+    // Removed later: still stalled, the speaker is freed.
+    vi.advanceTimersByTime(DEVICE_GRACE_MS)
+    expect(hub.state()).toMatchObject({ speakerDevice: null, playing: false, stalled: true })
+  })
+
+  it('does not stall when the 音箱 reconnects within SPEAKER_GRACE_MS', () => {
+    vi.useFakeTimers()
+    hub = new RehearsalHub()
+    const { b } = playingWithSpeakerB()
+    const before = hub.state()
+    b.req.emit('close')
+    vi.advanceTimersByTime(SPEAKER_GRACE_MS - 1)
+    const back = fakeStream()
+    hub.subscribe('b', B.deviceId, 'phone', back.req, back.res as never)
+    vi.advanceTimersByTime(SPEAKER_GRACE_MS * 2 + DEVICE_GRACE_MS)
+    expect(hub.state()).toMatchObject({
+      playing: true,
+      stalled: false,
+      seq: before.seq,
+      clock: before.clock,
+      speakerDevice: B.deviceId,
+    })
   })
 
   it('sends a heartbeat comment on the interval', () => {

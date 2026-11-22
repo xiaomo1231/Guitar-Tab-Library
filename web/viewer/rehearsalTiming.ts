@@ -6,10 +6,11 @@
  * by its own latency.
  */
 import type { RehearsalDevice, RehearsalState } from '../lib/api'
+import { referenceDeviceId } from '@/songs/scoreServerTypes'
 
-/** The device whose player is the reference: the 音箱, else the conductor's device. */
+/** The device whose player is the reference (see referenceDeviceId: one that is there). */
 export function referenceDevice(state: RehearsalState): RehearsalDevice | null {
-  const id = state.speakerDevice ?? state.leaderDevice
+  const id = referenceDeviceId(state)
   return state.devices.find((d) => d.deviceId === id) ?? null
 }
 
@@ -52,4 +53,16 @@ export function expectedTimeMs(
 /** Drift beyond which a device is put back in place (ms): tighter for devices that sound. */
 export function driftLimitMs(sounding: boolean): number {
   return sounding ? 35 : 80
+}
+
+/** How this device follows the room, for the 同步 light. */
+export type SyncLight = 'ok' | 'fixing' | 'away'
+
+/** Drift (ms) that still counts as in step for the light. */
+export const LIGHT_OK_MS = 120
+
+export function syncLight(connected: boolean, playing: boolean, driftMs: number | null): SyncLight {
+  if (!connected) return 'away'
+  if (playing && driftMs !== null && Math.abs(driftMs) > LIGHT_OK_MS) return 'fixing'
+  return 'ok'
 }
