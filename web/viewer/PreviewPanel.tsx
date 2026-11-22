@@ -114,7 +114,6 @@ function PreviewSheet({
   index: number
 }) {
   const desktop = useIsDesktop()
-  const [headerH, setHeaderH] = useState(0)
   const [kinds, setKinds] = useState('')
   const [dragY, setDragY] = useState(0)
   const drag = useRef<{ y: number; t: number } | null>(null)
@@ -140,17 +139,6 @@ function PreviewSheet({
     window.clearTimeout(leaveTimer.current)
     setState((s) => (s === 'leaving' ? 'open' : s))
   }, [item.path])
-
-  // The desktop panel starts just below the site header (as the score viewer measures it).
-  useEffect(() => {
-    const header = document.querySelector('header')
-    if (!header) return
-    const measure = () => setHeaderH(header.getBoundingClientRect().height)
-    measure()
-    const ro = new ResizeObserver(measure)
-    ro.observe(header)
-    return () => ro.disconnect()
-  }, [])
 
   // Escape closes; ArrowUp / ArrowDown move to the neighbouring version.
   useEffect(() => {
@@ -308,7 +296,7 @@ function PreviewSheet({
         <aside
           aria-label="快速预览"
           data-state={state}
-          style={{ top: headerH }}
+          style={{ top: 0 }}
           className="gl-preview-desk fixed bottom-0 right-0 z-40 flex w-[min(46vw,720px)] flex-col border-l border-border bg-background shadow-[-12px_0_32px_-16px_rgba(0,0,0,0.45)]"
         >
           {header}

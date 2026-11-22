@@ -245,7 +245,6 @@ export function ScoreViewer({
   const [loopState, setLoopState] = useState<LoopState | null>(null)
   const [soundFonts, setSoundFonts] = useState<ReadonlySet<SoundFontId>>(() => new Set(['basic']))
   const [activeNotes, setActiveNotes] = useState<FretNote[]>([])
-  const [headerH, setHeaderH] = useState(0)
   const [pop, setPop] = useState<PopKind | null>(null)
   /** The popover was opened with a key (S / T / K / P): it appears without animation. */
   const [keyPop, setKeyPop] = useState(false)
@@ -430,17 +429,6 @@ export function ScoreViewer({
     const timer = window.setTimeout(() => setSlow(true), SLOW_MS)
     return () => window.clearTimeout(timer)
   }, [phase])
-
-  // The sticky fretboard sits under the site header.
-  useEffect(() => {
-    const header = document.querySelector('header')
-    if (!header) return
-    const measure = () => setHeaderH(header.getBoundingClientRect().height)
-    measure()
-    const ro = new ResizeObserver(measure)
-    ro.observe(header)
-    return () => ro.disconnect()
-  }, [])
 
   // Practice records: sends the time played since the last save plus the state to keep.
   const flushRef = useRef<(exit: boolean) => void>(() => {})
@@ -1576,7 +1564,7 @@ export function ScoreViewer({
       {bandSong && reh.here && rehState && me && (
         <>
           {/* The status line stays under the site header while the score scrolls. */}
-          <div className="sticky z-30" style={{ top: headerH }}>
+          <div className="sticky z-30" style={{ top: 0 }}>
             <div className="gutter mx-auto w-full max-w-[1180px]">
               <RehearsalStrip
                 songTitle={bandSong.title}
@@ -1811,7 +1799,7 @@ export function ScoreViewer({
       </div>
       {bandSong && showLyrics && (
         // Stays under the header (and the rehearsal's status line) while the score scrolls below.
-        <div className="sticky z-20" style={{ top: headerH + (reh.here ? 44 : 0) }}>
+        <div className="sticky z-20" style={{ top: reh.here ? 44 : 0 }}>
           <div className="gutter mx-auto mb-2 w-full max-w-[1180px]">
             <div
               className="overflow-y-auto rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3"
@@ -1857,7 +1845,7 @@ export function ScoreViewer({
         {showFretboard && (
           <div
             className="sticky z-20 -mx-3 mb-2 border-b border-[color:var(--sheet-line)] px-3 py-1"
-            style={{ top: headerH, background: 'var(--sheet-bg)' }}
+            style={{ top: 0, background: 'var(--sheet-bg)' }}
           >
             <Fretboard labels={tuningLabels(shownTrack)} notes={activeNotes} />
           </div>
