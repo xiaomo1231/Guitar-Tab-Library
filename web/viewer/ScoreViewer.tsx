@@ -596,7 +596,9 @@ export function ScoreViewer({
             playerMode: at.PlayerMode.EnabledSynthesizer,
             soundFont: soundFontUrl(font),
             scrollElement: (document.scrollingElement ?? document.documentElement) as HTMLElement,
-            scrollMode: at.ScrollMode.Continuous,
+            // Off until the player is ready: alphaTab scrolls to the cursor as soon as it
+            // places it, which pushed the title and the back button off a freshly opened page.
+            scrollMode: at.ScrollMode.Off,
             enableCursor: true,
             enableUserInteraction: true,
             // The row being played sits about a third of the way down the page.
@@ -744,7 +746,18 @@ export function ScoreViewer({
           window.setTimeout(() => setRestoreNote(''), 6000)
           setPrefs((p) => ({ ...p, soundFont: 'basic' }))
         })
+        // The page follows the cursor from now on (see scrollMode above): shortly after the
+        // player is ready, when the first placement of the cursor is over, or at the first play.
+        const followCursor = () => {
+          if (a.settings.player.scrollMode === at.ScrollMode.Continuous) return
+          a.settings.player.scrollMode = at.ScrollMode.Continuous
+          // Makes alphaTab build its scroll handler; nothing is rendered again.
+          a.updateSettings()
+        }
         a.playerReady.on(() => {
+          window.setTimeout(() => {
+            if (!disposed) followCursor()
+          }, 500)
           playerReadyRef.current = true
           setSoundFailed(false)
           setReady(true)
@@ -755,6 +768,7 @@ export function ScoreViewer({
         })
         a.playerStateChanged.on((e) => {
           const on = e.state === 1
+          if (on) followCursor()
           setPlaying(on)
           const c = clock.current
           if (on && !c.startedAt) {

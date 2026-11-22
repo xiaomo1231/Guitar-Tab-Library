@@ -445,7 +445,7 @@ export function BandPage() {
 
       {me && me.bands.length > 1 && <BandSwitcher bands={me.bands} current={state.id} />}
 
-      <RehearsalSection band={state} meId={me?.id ?? null} />
+      <RehearsalSection band={state} meId={me?.id ?? null} manager={manager} />
 
       <MembersSection band={state} meId={me?.id ?? null} manager={manager} daily={daily} />
 
@@ -542,7 +542,16 @@ export function BandPage() {
  * 排练: today's setlist (edited while no rehearsal runs), starting the rehearsal, and
  * joining or ending the one that runs. Live through the rehearsal stream.
  */
-function RehearsalSection({ band, meId }: { band: BandState; meId: string | null }) {
+function RehearsalSection({
+  band,
+  meId,
+  manager,
+}: {
+  band: BandState
+  meId: string | null
+  /** The band's leader (队长) or an admin: only they start a rehearsal. */
+  manager: boolean
+}) {
   const rh = useRehearsal()
   const [busy, setBusy] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -848,11 +857,16 @@ function RehearsalSection({ band, meId }: { band: BandState; meId: string | null
             <button
               type="button"
               onClick={() => void start()}
-              disabled={setlist.length === 0 || busy !== null}
+              disabled={!manager || setlist.length === 0 || busy !== null}
               className="inline-flex min-h-12 w-full items-center justify-center rounded-lg bg-primary px-5 text-base font-medium text-primary-foreground hover:bg-primary-strong disabled:opacity-50"
             >
               {busy === 'start' ? '开始中…' : '开始排练'}
             </button>
+            {!manager && (
+              <p className="m-0 pt-2 text-xs text-muted-foreground">
+                排练由队长开始。开始后这里会出现「加入排练」。
+              </p>
+            )}
           </div>
         </div>
       )}

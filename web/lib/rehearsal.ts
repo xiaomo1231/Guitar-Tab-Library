@@ -60,6 +60,9 @@ export async function measureOffset(n = 8): Promise<number> {
 const DEVICE_KEY = 'gl-device-id'
 const REMEASURE_MS = 60_000
 const CLOSE_AFTER_MS = 3000
+/** A stream the browser gave up on is opened again after this long, doubling up to the cap. */
+const RETRY_FIRST_MS = 2000
+const RETRY_MAX_MS = 30_000
 const ERROR_VISIBLE_MS = 5000
 
 /**
@@ -107,6 +110,8 @@ let source: EventSource | null = null
 let closeTimer: ReturnType<typeof setTimeout> | null = null
 let remeasureTimer: ReturnType<typeof setInterval> | null = null
 let errorTimer: ReturnType<typeof setTimeout> | null = null
+let retryTimer: ReturnType<typeof setTimeout> | null = null
+let retryMs = RETRY_FIRST_MS
 
 function set(patch: Partial<Snapshot>): void {
   snap = { ...snap, ...patch }
@@ -141,6 +146,7 @@ function open(): void {
   source = es
   let opened = false
   es.onopen = () => {
+    retryMs = RETRY_FIRST_MS
     set({ connected: true })
     // A reconnect: the server may have restarted; take whatever it sends next.
     if (opened) {
@@ -172,14 +178,46 @@ function open(): void {
   es.onerror = () => {
     set({ connected: false })
     if (es.readyState === EventSource.CLOSED) {
-      showError('和服务器的实时连接断开了，请刷新页面。')
+      // The browser gave up (the server restarted, the phone slept): keep trying while a
+      // page still uses the stream.
+      showError('和服务器的实时连接断开了，正在重新连接…')
       close()
+      scheduleRetry()
     }
   }
   remeasureTimer = setInterval(remeasure, REMEASURE_MS)
 }
 
+function scheduleRetry(): void {
+  if (retryTimer || users === 0) return
+  retryTimer = setTimeout(() => {
+    retryTimer = null
+    if (users > 0 && !source) open()
+  }, retryMs)
+  retryMs = Math.min(RETRY_MAX_MS, retryMs * 2)
+}
+
+/**
+ * The page is shown again (the phone was unlocked, the tab came back): timers were held
+ * back and the stream may be gone, so reconnect at once and measure the clock again.
+ */
+function onVisible(): void {
+  if (document.visibilityState !== 'visible' || users === 0) return
+  if (retryTimer) {
+    clearTimeout(retryTimer)
+    retryTimer = null
+  }
+  retryMs = RETRY_FIRST_MS
+  if (!source) open()
+  else remeasure()
+}
+if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisible)
+
 function close(): void {
+  if (retryTimer) {
+    clearTimeout(retryTimer)
+    retryTimer = null
+  }
   source?.close()
   source = null
   if (remeasureTimer) clearInterval(remeasureTimer)
