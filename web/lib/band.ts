@@ -149,5 +149,20 @@ export const setSetlist = (ids: string[]) => commit(api.setRehearsalSetlist(ids)
 export const addComment = (songId: string, bar: number, text: string, kind?: MarkKind) =>
   commit(api.addComment({ songId, bar, text, ...(kind ? { kind } : {}) }))
 export const setLyrics = (songId: string, lines: SheetLine[]) => commit(api.setLyrics({ songId, lines }))
+/**
+ * A voice note on a bar: the clip is uploaded as a recording of the song, then the 留言
+ * points at it (with `kind` it is also a 标记).
+ */
+export const addVoiceComment = async (songId: string, bar: number, clip: Blob, kind?: MarkKind) => {
+  const ext = /mp4|m4a|aac/.test(clip.type) ? 'm4a' : /ogg/.test(clip.type) ? 'ogg' : 'webm'
+  const before = new Set((await api.recordings(songId)).map((r) => r.id))
+  const after = await api.uploadRecording({ songId, label: `第 ${bar} 小节语音`, name: `voice.${ext}` }, clip)
+  const added = after.filter((r) => !before.has(r.id)).sort((a, b) => b.uploadedAt - a.uploadedAt)[0]
+  if (!added) throw new Error('语音没有传上去，请再试一次。')
+  await commit(api.addComment({ songId, bar, text: '', clipId: added.id, ...(kind ? { kind } : {}) }))
+}
+/** 「知道了」 on someone else's 留言 / 标记. */
+export const ackComment = (songId: string, commentId: string) =>
+  commit(api.ackComment(songId, commentId))
 export const removeComment = (songId: string, commentId: string) =>
   commit(api.removeComment(songId, commentId))

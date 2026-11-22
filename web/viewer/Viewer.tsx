@@ -77,24 +77,39 @@ export function Viewer({ route }: { route: ViewerRoute }) {
 
   return (
     <div className="space-y-4 pb-6">
-      <header className="gutter mx-auto flex w-full max-w-[1180px] flex-wrap items-baseline gap-x-3.5 gap-y-1 pb-1 pt-3.5">
+      <header className="gutter mx-auto flex w-full max-w-[1180px] items-center gap-2 pb-1 pt-3">
         <button
           type="button"
           aria-label="返回"
           onClick={() => goBack('#/')}
-          className="-ml-2 flex h-11 w-11 shrink-0 items-center justify-center self-center rounded-full text-3xl leading-none text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          className="-ml-1.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-border bg-card text-muted-foreground transition-colors hover:bg-[hsl(var(--raised))] hover:text-foreground"
         >
-          <span aria-hidden className="-translate-y-0.5">
-            ‹
-          </span>
+          <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden>
+            <path
+              d="M12.5 4.5 7 10l5.5 5.5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
         </button>
-        <h1 className="min-w-0 break-words font-display text-[26px] font-black leading-tight">
-          {title}
-        </h1>
-        {artist && <span className="break-words text-sm text-muted-foreground">{artist}</span>}
-        <span className="mono min-w-0 break-all text-[11px] text-muted-foreground">
-          {fileBaseName(path)}
-        </span>
+        <div className="min-w-0 flex-1">
+          <h1 className="m-0 min-w-0 break-words text-lg font-bold leading-snug min-[861px]:text-xl">
+            {title}
+          </h1>
+          {/* Artist as a quiet line; the long file name only where there is room. */}
+          <p className="m-0 flex min-w-0 items-baseline gap-x-2 text-[13px] text-muted-foreground">
+            {artist && <span className="min-w-0 truncate">{artist}</span>}
+            <span
+              className="mono hidden min-w-0 truncate text-[11px] opacity-80 sm:inline"
+              title={fileBaseName(path)}
+            >
+              {fileBaseName(path)}
+            </span>
+          </p>
+        </div>
       </header>
       {/* The score runs edge to edge; pictures, PDFs and text keep the page gutter. */}
       {format === 'score' ? (

@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import type { BandOverview, Instrument, Role, UserInfo } from '@/songs/scoreServerTypes'
 import { api, errorText } from '../lib/api'
-import { buttonClass, cx, SELECT } from '../lib/classes'
+import { buttonClass, cx, LIST, PILL, SECTION_TITLE, SELECT } from '../lib/classes'
 import { INSTRUMENT_LABELS, useMe } from '../lib/session'
 import { InvitesPanel } from '../components/InvitesPanel'
 import { Notice, PageBar } from '../components/ui'
@@ -159,8 +159,8 @@ function AddForm({
   }
 
   return (
-    <form onSubmit={submit} className="space-y-4 rounded-lg border border-border p-4">
-      <h2 className="label m-0">添加成员</h2>
+    <form onSubmit={submit} className="space-y-4 rounded-[14px] border border-border bg-card p-4">
+      <h2 className={SECTION_TITLE}>添加成员</h2>
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="用户名">
           <input
@@ -579,7 +579,7 @@ function BandRow({
   }
 
   return (
-    <li className="border-t border-border py-3 first:border-t-0">
+    <li className="border-t border-border px-3.5 py-3 first:border-t-0">
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <span className="break-all text-base font-bold">{band.name}</span>
         <span className="text-xs text-muted-foreground">队长：{nameOf(band.leaderId)}</span>
@@ -708,7 +708,7 @@ export function UsersPage() {
   if (!isAdmin) {
     return (
       <>
-        <PageBar title="管理" back="← 我的账号" fallback="#/me" />
+        <PageBar title="管理" back="‹ 我的" fallback="#/me" />
         <div className="max-w-[640px] py-6">
           <Notice tone="error">只有管理员可以打开管理页。</Notice>
         </div>
@@ -731,7 +731,7 @@ export function UsersPage() {
     <>
       <PageBar
         title="管理"
-        back="← 我的账号"
+        back="‹ 我的"
         fallback="#/me"
         subtitle={list ? `${list.length} 个账号${bands ? ` · ${bands.length} 个乐队` : ''}` : undefined}
       >
@@ -747,7 +747,7 @@ export function UsersPage() {
         </button>
       </PageBar>
 
-      <div className="max-w-[640px] space-y-6 pb-20 pt-6">
+      <div className="max-w-[640px] space-y-8 pb-20 pt-2">
         {message && (
           <p role="status" className="m-0 text-sm text-muted-foreground">
             {message}
@@ -770,14 +770,14 @@ export function UsersPage() {
 
         {bands && list && (
           <section>
-            <h2 className="label m-0">乐队</h2>
+            <h2 className={SECTION_TITLE}>乐队</h2>
             <p className="m-0 mt-1 text-xs text-muted-foreground">
               队长用你发的队长邀请码注册后会自动建一个乐队。每个乐队的歌单、排练、上传的谱和录音互相看不到。
             </p>
             {bands.length === 0 ? (
-              <p className="m-0 mt-3 text-sm text-muted-foreground">还没有乐队。</p>
+              <p className={cx(LIST, 'm-0 mt-3 px-3.5 py-4 text-sm text-muted-foreground')}>还没有乐队。</p>
             ) : (
-              <ul className="m-0 mt-3 list-none p-0">
+              <ul className={cx(LIST, 'm-0 mt-3 list-none p-0')}>
                 {bands.map((b) => (
                   <BandRow
                     key={b.id}
@@ -796,9 +796,9 @@ export function UsersPage() {
 
         {list && (
           <section>
-            <h2 className="label m-0">账号</h2>
+            <h2 className={SECTION_TITLE}>账号</h2>
             <p className="m-0 mt-1 text-xs text-muted-foreground">按邀请关系排列：缩进的账号是上面那个人邀请来的。</p>
-            <ul className="m-0 mt-3 list-none p-0">
+            <ul className={cx(LIST, 'm-0 mt-3 list-none p-0')}>
               {inviteTree(list).map(({ user: u, depth }) => {
                 const open = panel && 'id' in panel && panel.id === u.id ? panel : null
                 const isSelf = u.id === me?.id
@@ -806,8 +806,8 @@ export function UsersPage() {
                 return (
                   <li
                     key={u.id}
-                    className="border-t border-border py-3 first:border-t-0"
-                    style={{ paddingLeft: `${Math.min(depth, 4) * 20}px` }}
+                    className="border-t border-border py-3 pr-3.5 first:border-t-0"
+                    style={{ paddingLeft: `${14 + Math.min(depth, 4) * 20}px` }}
                   >
                     <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
                       <span className="break-all text-base font-bold">{u.displayName}</span>
@@ -815,12 +815,12 @@ export function UsersPage() {
                         {u.username}
                       </span>
                       {u.role === 'admin' && (
-                        <span className="mono inline-flex items-center rounded-[3px] border border-primary px-1 text-[11px] leading-5 text-primary">
+                        <span className={cx(PILL, 'border-primary text-[11px] text-primary')}>
                           管理员
                         </span>
                       )}
                       {u.disabled && (
-                        <span className="mono inline-flex items-center rounded-[3px] border border-destructive px-1 text-[11px] leading-5 text-destructive">
+                        <span className={cx(PILL, 'border-destructive text-[11px] text-destructive')}>
                           已停用
                         </span>
                       )}

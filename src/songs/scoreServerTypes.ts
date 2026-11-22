@@ -282,6 +282,8 @@ export interface AddCommentBody {
   /** May be empty when `kind` says it all. */
   text: string
   kind?: MarkKind
+  /** A short voice note recorded for this bar: the id of a recording the sender just uploaded to this song. */
+  clipId?: string
 }
 
 /** POST /api/band/songs/lyrics: replaces the song's 词谱 (an empty list removes it). */
@@ -332,6 +334,10 @@ export interface BarComment {
   kind?: MarkKind
   userId: string
   at: number
+  /** The recording (see RecordingInfo) that is this comment's voice note, when it has one. */
+  clipId?: string
+  /** Members who tapped 「知道了」 on it (never the author); missing when nobody has. */
+  acks?: string[]
 }
 
 // ---------------------------------------------------------------------------

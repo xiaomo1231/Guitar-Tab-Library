@@ -35,3 +35,14 @@ export const LIST_ROW =
 
 /** A quiet section heading over a LIST. */
 export const SECTION_TITLE = 'm-0 text-[13px] font-bold tracking-[0.02em] text-muted-foreground'
+
+/** A block on the raised surface with its own padding (a summary, a form, an empty state). */
+export const CARD = 'rounded-[14px] border border-border bg-card p-4'
+
+/** A small rounded tag: a state, a count, a format. Add a colour class for the pen or a warning. */
+export const PILL =
+  'inline-flex shrink-0 items-center whitespace-nowrap rounded-full border border-border px-2.5 text-xs leading-[22px] text-muted-foreground'
+
+/** The one big action of a screen (开始排练, 加入排练): full width, 52 px tall, the pen. */
+export const CTA =
+  'flex min-h-[52px] w-full items-center justify-center gap-2 rounded-[14px] bg-primary px-4 text-base font-bold text-primary-foreground transition-[background-color,transform] duration-150 ease-out hover:bg-primary-strong active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100'

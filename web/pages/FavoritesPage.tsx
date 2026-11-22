@@ -3,7 +3,8 @@ import { errorText, type FavoriteItem } from '../lib/api'
 import { renameFavorite, renameFavoriteSong, toggleFavorite, useFavorites } from '../lib/favorites'
 import { practiceLine, usePractice } from '../lib/practice'
 import type { PracticeRecord } from '../lib/api'
-import { hrefViewer } from '../lib/route'
+import { hrefViewer, HREF_ACCOUNT } from '../lib/route'
+import { cx, LIST } from '../lib/classes'
 import {
   fileNameOf,
   filterGroups,
@@ -106,7 +107,7 @@ export function FavoritesPage() {
   /** The inline name editor: Enter saves, Escape cancels. */
   const editor = (label: string, id: string, onSave: (name: string) => void) => (
     <form
-      className="flex min-w-0 flex-1 flex-wrap items-center gap-2 py-1.5 pl-4"
+      className="flex min-w-0 flex-1 flex-wrap items-center gap-2 px-3.5 py-2"
       onSubmit={(e) => {
         e.preventDefault()
         onSave(draft.trim())
@@ -125,7 +126,7 @@ export function FavoritesPage() {
             setEditing(null)
           }
         }}
-        className="h-11 min-w-0 flex-1 rounded-lg border border-border bg-card px-3 text-base text-foreground outline-none ring-inset focus:ring-2 focus:ring-primary"
+        className="h-11 min-w-0 flex-1 rounded-lg border border-border bg-transparent px-3 text-base text-foreground outline-none focus:border-primary"
       />
       <button
         type="submit"
@@ -157,8 +158,11 @@ export function FavoritesPage() {
       : label
     const isEditing = editing === id
     return (
-      <li key={f.path} className="border-t border-border first:border-t-0">
-        <div className="flex items-center gap-2">
+      <li
+        key={f.path}
+        className="border-t border-border transition-colors hover:bg-[hsl(var(--raised))]"
+      >
+        <div className="flex min-h-[60px] items-center gap-1 pr-1.5">
           {isEditing ? (
             editor('文件的新名字', id, (name) => void renameFile(f, name || null))
           ) : (
@@ -170,15 +174,16 @@ export function FavoritesPage() {
                 title: f.alias || g.songAlias || f.title,
                 artist: f.artist,
               })}
-              className="group flex min-h-11 min-w-0 flex-1 items-center gap-2 py-1.5 pl-4"
+              className="flex min-h-[60px] min-w-0 flex-1 items-center gap-3 py-2 pl-3.5"
             >
-              <span aria-hidden className="mono shrink-0 text-muted-foreground">
-                ──
+              <span className="min-w-0 flex-1">
+                <MiddleText text={shown} className="text-[15px] font-medium" />
+                {record && (
+                  <span className="mono block truncate text-[11px] text-muted-foreground">
+                    {practiceLine(record)}
+                  </span>
+                )}
               </span>
-              <MiddleText
-                text={shown}
-                className="flex-1 text-[15px] font-medium transition-colors group-hover:text-primary"
-              />
               <FormatBadge format={f.format} />
             </Link>
           )}
@@ -205,7 +210,7 @@ export function FavoritesPage() {
           </button>
         </div>
         {f.alias && !isEditing && (
-          <div className="-mt-1 flex flex-wrap items-center gap-x-3 pb-1 pl-4 text-[11px] text-muted-foreground">
+          <div className="-mt-2 flex flex-wrap items-center gap-x-3 pb-2 pl-3.5 pr-3.5 text-[11px] text-muted-foreground">
             <MiddleText text={`原名：${label}`} className="mono" />
             <button
               type="button"
@@ -217,11 +222,6 @@ export function FavoritesPage() {
             </button>
           </div>
         )}
-        {record && (
-          <p className="mono -mt-1 truncate pb-1.5 pl-4 text-[11px] text-muted-foreground">
-            {practiceLine(record)}
-          </p>
-        )}
       </li>
     )
   }
@@ -230,8 +230,8 @@ export function FavoritesPage() {
     <>
       <PageBar
         title="我的收藏"
-        back="← 目录"
-        fallback="#/"
+        back="‹ 我的"
+        fallback={HREF_ACCOUNT}
         subtitle={loaded ? `${items.length} 个` : undefined}
       >
         <Seg<Order>
@@ -257,7 +257,7 @@ export function FavoritesPage() {
           <p className="mb-3 text-xs text-muted-foreground">
             改名只改你自己收藏里显示的名字，谱库和其他人看到的不变。
           </p>
-          <div className="relative">
+          <div className="relative mb-5">
             <input
               type="search"
               aria-label="在收藏里搜索歌名、歌手或文件名"
@@ -267,7 +267,7 @@ export function FavoritesPage() {
               spellCheck={false}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              className="h-11 w-full rounded-lg border border-border bg-card pl-3.5 pr-12 text-base text-foreground outline-none ring-inset transition-shadow placeholder:text-muted-foreground focus:ring-2 focus:ring-primary [&::-webkit-search-cancel-button]:appearance-none"
+              className="h-12 w-full rounded-[14px] border border-border bg-card pl-3.5 pr-12 text-base text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-primary [&::-webkit-search-cancel-button]:appearance-none"
             />
             {query && (
               <button
@@ -285,27 +285,32 @@ export function FavoritesPage() {
             <p className="py-8 text-center text-sm text-muted-foreground">没有匹配的收藏。</p>
           ) : (
             visible.map((g) => (
-              <section key={g.key || '_'} className="mt-6 first:mt-0">
+              <section key={g.key || '_'} className={cx(LIST, 'mt-3')}>
                 {editing === `s:${g.key}` ? (
                   editor('歌名的新名字', `s:${g.key}`, (name) => void renameSong(g, name || null))
                 ) : (
-                  <h2 className="m-0 flex flex-wrap items-baseline gap-x-2.5 text-[17px] font-bold">
-                    <span className="min-w-0 break-words">{g.displayTitle || '未归类'}</span>
-                    <span className="mono text-xs font-normal text-muted-foreground">
-                      {g.items.length} 个谱
-                    </span>
+                  <div className="flex min-h-[56px] items-center gap-2 py-2 pl-3.5 pr-1.5">
+                    <div className="min-w-0 flex-1">
+                      <h2 className="m-0 break-words text-base font-bold leading-snug">
+                        {g.displayTitle || '未归类'}
+                      </h2>
+                      <p className="m-0 truncate text-[13px] text-muted-foreground">
+                        {g.artist ? `${g.artist} · ` : ''}
+                        {g.items.length} 个谱
+                      </p>
+                    </div>
                     <button
                       type="button"
                       onClick={() => startRename(`s:${g.key}`, g.displayTitle)}
                       disabled={busy === `s:${g.key}`}
-                      className="rounded-lg px-1 text-xs font-normal text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+                      className="h-11 shrink-0 rounded-lg px-2 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
                     >
                       改名
                     </button>
-                  </h2>
+                  </div>
                 )}
                 {g.songAlias && editing !== `s:${g.key}` && (
-                  <div className="mono mb-1 flex flex-wrap items-center gap-x-3 text-xs text-muted-foreground">
+                  <div className="mono -mt-1.5 flex flex-wrap items-center gap-x-3 px-3.5 pb-2 text-xs text-muted-foreground">
                     <span className="min-w-0 break-words">原名：{g.originalTitle || '未归类'}</span>
                     <button
                       type="button"
@@ -317,10 +322,7 @@ export function FavoritesPage() {
                     </button>
                   </div>
                 )}
-                {g.artist && (
-                  <p className="mono mb-1 text-xs text-muted-foreground">{g.artist}</p>
-                )}
-                <ul className="m-0 list-none border-l-2 border-border p-0 pl-1">
+                <ul className="m-0 list-none p-0">
                   {g.items.map((f) => row(f, g))}
                 </ul>
               </section>

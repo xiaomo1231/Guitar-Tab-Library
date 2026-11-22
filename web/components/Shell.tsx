@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, errorText, type LibraryInfo, type UserInfo } from '../lib/api'
 import { cx } from '../lib/classes'
 import { useFavorites } from '../lib/favorites'
@@ -25,19 +25,21 @@ import { SongsPage } from '../pages/SongsPage'
 import { SearchPage } from '../pages/SearchPage'
 import { FavoritesPage } from '../pages/FavoritesPage'
 import { BandPage } from '../pages/BandPage'
-import { BandSongPage } from '../pages/BandSongPage'
-import { UploadSongPage } from '../pages/UploadSongPage'
-import { EnsemblesPage } from '../pages/EnsemblesPage'
 import { AccountPage } from '../pages/AccountPage'
-import { UsersPage } from '../pages/UsersPage'
-import { DrumEditorPage } from '../pages/DrumEditorPage'
-import { CombinePage } from '../pages/CombinePage'
-import { DailyPage } from '../pages/DailyPage'
 import { InvitePage } from '../pages/InvitePage'
 import { MinePage } from '../pages/MinePage'
-import { Viewer } from '../viewer/Viewer'
 import { PreviewHost } from '../viewer/PreviewPanel'
 import { closePreview, usePreview } from '../lib/preview'
+
+// Pages most visits never open load when they are first needed.
+const BandSongPage = lazy(() => import('../pages/BandSongPage').then((m) => ({ default: m.BandSongPage })))
+const UploadSongPage = lazy(() => import('../pages/UploadSongPage').then((m) => ({ default: m.UploadSongPage })))
+const EnsemblesPage = lazy(() => import('../pages/EnsemblesPage').then((m) => ({ default: m.EnsemblesPage })))
+const UsersPage = lazy(() => import('../pages/UsersPage').then((m) => ({ default: m.UsersPage })))
+const DrumEditorPage = lazy(() => import('../pages/DrumEditorPage').then((m) => ({ default: m.DrumEditorPage })))
+const CombinePage = lazy(() => import('../pages/CombinePage').then((m) => ({ default: m.CombinePage })))
+const DailyPage = lazy(() => import('../pages/DailyPage').then((m) => ({ default: m.DailyPage })))
+const Viewer = lazy(() => import('../viewer/Viewer').then((m) => ({ default: m.Viewer })))
 
 const delay = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms))
 
@@ -194,7 +196,11 @@ export function Shell({ onLoggedOut }: { onLoggedOut: () => void }) {
             )}
           >
             {pageReady ? (
-              renderRoute(route, libraryHidden)
+              <Suspense
+                fallback={<p className="py-16 text-center text-sm text-muted-foreground">正在打开…</p>}
+              >
+                {renderRoute(route, libraryHidden)}
+              </Suspense>
             ) : error ? (
               <Notice tone="error">
                 <p>{error}</p>

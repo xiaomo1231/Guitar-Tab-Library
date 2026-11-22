@@ -168,3 +168,13 @@ describe('changedSince', () => {
     expect(changedSince([], 0)).toEqual([])
   })
 })
+
+describe('a voice note in the feed', () => {
+  it('says a voice note was left when there are no words', () => {
+    const out = activityText(
+      { type: 'mark', at: 1, userId: 'u', songId: 's', bar: 7, kind: null, text: '' },
+      { userName: () => '小林', songTitle: () => 'Amani' },
+    )
+    expect(out.text).toBe('小林 在《Amani》第 7 小节留了一段语音')
+  })
+})

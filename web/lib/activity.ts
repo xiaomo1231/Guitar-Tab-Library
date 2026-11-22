@@ -66,7 +66,9 @@ export function activityText(item: BandActivity, names: ActivityNames): Activity
       const head = `${names.userName(item.userId)} 在《${names.songTitle(item.songId)}》第 ${item.bar} 小节`
       const text =
         item.kind === null
-          ? `${head}留言：${item.text}`
+          ? item.text
+            ? `${head}留言：${item.text}`
+            : `${head}留了一段语音`
           : `${head}标记「${MARK_LABEL[item.kind]}」${item.text ? `：${item.text}` : ''}`
       return { text, songId: item.songId }
     }

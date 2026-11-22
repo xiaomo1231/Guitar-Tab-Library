@@ -1,17 +1,17 @@
 import type { ReactNode } from 'react'
 import type { ScoreFormat, SearchMatch } from '@/songs/scoreLibraryTypes'
 import { FORMAT_BADGE, MATCH_LABEL } from '../lib/format'
-import { buttonClass, cx, PAGE_SIZE } from '../lib/classes'
+import { buttonClass, cx, PAGE_SIZE, PILL } from '../lib/classes'
 import { goBack } from '../lib/route'
 import { Link } from './Link'
 
-/** A format chip: plain bordered mono, as printed on a score's label. */
+/** A format pill: small, bordered, mono; GP in ink, the rest muted. */
 export function FormatBadge({ format, className }: { format: ScoreFormat; className?: string }) {
   const badge = FORMAT_BADGE[format]
   return (
     <span
       className={cx(
-        'mono inline-flex shrink-0 items-center justify-center rounded-[3px] border px-1 py-px text-[11px] leading-5',
+        'mono inline-flex shrink-0 items-center justify-center rounded-full border px-2 text-[11px] leading-5',
         badge.className,
         className,
       )}
@@ -26,7 +26,7 @@ export function JianpuBadge({ className }: { className?: string }) {
   return (
     <span
       className={cx(
-        'ml-2 inline-flex shrink-0 items-center rounded-[3px] border border-primary px-1 py-px align-middle font-sans text-[11px] font-normal leading-5 text-primary',
+        'ml-2 inline-flex shrink-0 items-center rounded-full border border-primary px-2 align-middle font-sans text-[11px] font-normal leading-5 text-primary',
         className,
       )}
     >
@@ -40,35 +40,36 @@ export function MatchTag({ match }: { match: SearchMatch }) {
   const label = MATCH_LABEL[match]
   if (!label) return null
   return (
-    <span className="ml-2 inline-flex shrink-0 items-center rounded-full border border-primary px-1.5 text-[11px] leading-5 text-primary">
+    <span className="ml-2 inline-flex shrink-0 items-center rounded-full border border-primary px-2 align-middle text-[11px] font-normal leading-5 text-primary">
       {label}
     </span>
   )
 }
 
-/** 「← 目录」: a text back link; the phone's back gesture when the app made the entry. */
+/** 「‹ 谱库」: a quiet text back link; the phone's back gesture when the app made the entry. */
 export function BackLink({ label, fallback }: { label: string; fallback: string }) {
+  // Older labels written as 「← 目录」 get the same quiet chevron.
+  const text = label.replace(/^←\s*/, '‹ ')
   return (
     <button
       type="button"
       onClick={() => goBack(fallback)}
-      className="-ml-1 inline-flex min-h-11 items-center self-start px-1 text-sm text-muted-foreground transition-colors hover:text-primary"
+      className="-ml-1 inline-flex min-h-11 items-center self-start px-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
     >
-      {label}
+      {text}
     </button>
   )
 }
 
 /**
- * Page head as a book's running head (书眉): a back link, the page's title, a mono
- * note and optional tools at the right, closed by one ink rule. Only the home page
- * (the book's contents) keeps the big title and the five hairlines.
+ * Page head: a quiet back link above, then the page's bold title, a mono note and
+ * optional tools at the right. No rule under it; the content's cards carry the shape.
  */
 export function PageBar({
   title,
   subtitle,
   fallback,
-  back = '← 返回',
+  back = '‹ 返回',
   children,
 }: {
   title: string
@@ -79,10 +80,10 @@ export function PageBar({
   children?: ReactNode
 }) {
   return (
-    <header className="pb-5 pt-4 min-[861px]:pt-6">
-      {back && <BackLink label={back} fallback={fallback} />}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-foreground pb-2.5">
-        <h1 className="m-0 min-w-0 break-words font-display text-[26px] font-black leading-tight min-[861px]:text-[30px]">
+    <header className="flex flex-col pb-4 pt-3 min-[861px]:pt-5">
+      {back ? <BackLink label={back} fallback={fallback} /> : <div className="h-2" aria-hidden />}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <h1 className="m-0 min-w-0 break-words font-display text-[26px] font-bold leading-tight min-[861px]:text-[30px]">
           {title}
         </h1>
         {subtitle && (
@@ -139,7 +140,7 @@ export function Seg<T extends string>({
   )
 }
 
-/** A contents-style line for a score: title over artist, format on the right. */
+/** One score as a LIST row: bold title over a quiet artist line, format pill and chevron on the right. */
 export function ScoreLine({
   title,
   artist,
@@ -154,18 +155,21 @@ export function ScoreLine({
   action?: ReactNode
 }) {
   return (
-    <div className="flex items-center gap-2 border-t border-border py-1.5 first:border-t-0">
+    <div className="flex min-h-[60px] items-center gap-1 border-t border-border pr-2 transition-colors first:border-t-0 hover:bg-[hsl(var(--raised))]">
       <Link
         href={href}
-        className="group grid min-h-11 min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] items-baseline gap-2.5 py-1.5"
+        className="flex min-h-[60px] min-w-0 flex-1 items-center gap-3 py-2 pl-3.5 pr-1"
       >
-        <span className="min-w-0">
-          <span className="block truncate text-base font-bold transition-colors group-hover:text-primary">
-            {title || '未识别的曲名'}
-          </span>
-          <span className="block truncate text-xs text-muted-foreground">{artist || ' '}</span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate font-bold">{title || '未识别的曲名'}</span>
+          <span className="block truncate text-[13px] text-muted-foreground">{artist || ' '}</span>
         </span>
-        <span className="mono text-[11px] text-muted-foreground">{FORMAT_BADGE[format].label}</span>
+        <span className={cx(PILL, 'mono text-[11px]')}>{FORMAT_BADGE[format].label}</span>
+        {!action && (
+          <span aria-hidden className="text-muted-foreground">
+            ›
+          </span>
+        )}
       </Link>
       {action}
     </div>
@@ -197,13 +201,76 @@ export function Notice({
     <div
       role={tone === 'error' ? 'alert' : 'status'}
       className={cx(
-        'rounded-lg border p-4 text-sm leading-relaxed',
+        'rounded-[14px] border p-4 text-sm leading-relaxed',
         tone === 'error'
           ? 'border-destructive text-destructive'
-          : 'border-dashed border-border text-muted-foreground',
+          : 'border-border bg-card text-muted-foreground',
       )}
     >
       {children}
     </div>
+  )
+}
+
+/** Page tabs (歌单 / 成员 / 设置): one row of equal buttons, the chosen one on the raised surface. */
+export function Tabs<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string
+  value: T
+  options: ReadonlyArray<readonly [T, string]>
+  onChange: (v: T) => void
+}) {
+  return (
+    <div
+      role="tablist"
+      aria-label={label}
+      className="flex gap-1 rounded-[12px] border border-border bg-card p-1"
+    >
+      {options.map(([v, text]) => (
+        <button
+          key={v}
+          type="button"
+          role="tab"
+          aria-selected={value === v}
+          onClick={() => onChange(v)}
+          className={cx(
+            'min-h-10 flex-1 rounded-[9px] px-3 text-sm font-bold transition-colors',
+            value === v
+              ? 'bg-[hsl(var(--raised))] text-foreground'
+              : 'text-muted-foreground hover:text-foreground',
+          )}
+        >
+          {text}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+const AVATAR_HUES = [231, 143, 28, 330, 190, 265, 50, 0]
+
+/** A member's initial on a coloured disc; the colour follows the name, so it stays the same everywhere. */
+export function Avatar({ name, size = 28 }: { name: string; size?: number }) {
+  let sum = 0
+  for (const ch of name) sum = (sum * 31 + (ch.codePointAt(0) ?? 0)) % 9973
+  const hue = AVATAR_HUES[sum % AVATAR_HUES.length] ?? 231
+  return (
+    <span
+      aria-hidden
+      className="inline-grid shrink-0 place-items-center rounded-full font-bold"
+      style={{
+        width: size,
+        height: size,
+        fontSize: Math.round(size * 0.45),
+        background: `hsl(${hue} 60% 55% / 0.22)`,
+        color: `hsl(${hue} 70% 68%)`,
+      }}
+    >
+      {[...name.trim()][0]?.toUpperCase() ?? '?'}
+    </span>
   )
 }

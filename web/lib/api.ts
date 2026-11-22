@@ -336,6 +336,8 @@ export const api = {
     ),
   addComment: (b: AddCommentBody) => call<BandState>('/api/band/comments/add', { body: b }),
   setLyrics: (b: SetLyricsBody) => call<BandState>('/api/band/songs/lyrics', { body: b }),
+  ackComment: (songId: string, commentId: string) =>
+    call<BandState>('/api/band/comments/ack', { body: { songId, commentId } }),
   removeComment: (songId: string, commentId: string) =>
     call<BandState>('/api/band/comments/remove', { body: { songId, commentId } }),
   setRehearsalSetlist: (ids: string[]) => call<BandState>('/api/band/setlist', { body: { ids } }),

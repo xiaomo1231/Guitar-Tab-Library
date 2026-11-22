@@ -584,6 +584,35 @@ describe('小节留言', () => {
     expect(readFile().songs[0].comments).toHaveLength(1)
   })
 
+  it('ackComment records each other member once and never the author', async () => {
+    const store = await BandStore.load(dir, inRoot)
+    const a = await store.add({ path: 'a.gp5', title: 'A', artist: '' }, 'u1', 1)
+    const s = await store.addComment({ songId: a.id, bar: 4, text: '', kind: 'changed' }, 'u2', 50)
+    const id = s.comments?.[0].id ?? ''
+    await store.ackComment(a.id, id, 'u2')
+    await store.ackComment(a.id, id, 'u3')
+    const after = await store.ackComment(a.id, id, 'u3')
+    expect(after.comments?.[0].acks).toEqual(['u3'])
+    const again = await BandStore.load(dir, inRoot)
+    expect(again.songs()[0].comments?.[0].acks).toEqual(['u3'])
+    const err = await store.ackComment(a.id, 'nope', 'u3').catch((e) => e)
+    expect(err.status).toBe(404)
+  })
+
+  it('a voice note may stand in for the words', async () => {
+    expect(parseAddComment({ songId: 's', bar: 2, text: '', clipId: '0123456789abcdef' })).toEqual({
+      ok: true,
+      value: { songId: 's', bar: 2, text: '', clipId: '0123456789abcdef' },
+    })
+    expect(parseAddComment({ songId: 's', bar: 2, text: '', clipId: '../x' }).ok).toBe(false)
+    expect(parseAddComment({ songId: 's', bar: 2, text: '' }).ok).toBe(false)
+    const store = await BandStore.load(dir, inRoot)
+    const a = await store.add({ path: 'a.gp5', title: 'A', artist: '' }, 'u1', 1)
+    await store.addComment({ songId: a.id, bar: 2, text: '', clipId: '0123456789abcdef' }, 'u2', 5)
+    const again = await BandStore.load(dir, inRoot)
+    expect(again.songs()[0].comments?.[0]).toMatchObject({ text: '', clipId: '0123456789abcdef' })
+  })
+
   it('addComment of an unknown song is a 404', async () => {
     const store = await BandStore.load(dir, inRoot)
     const err = await store.addComment({ songId: 'nope', bar: 1, text: 'x' }, 'u1', 1).catch((e) => e)
