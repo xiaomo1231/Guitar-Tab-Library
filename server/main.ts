@@ -45,6 +45,7 @@ import {
   type InRoot,
 } from './favorites'
 import {
+  MAX_ADD_SECONDS,
   applyPracticeUpdate,
   loadPracticeByUser,
   parsePracticePath,
@@ -82,6 +83,7 @@ import {
 } from './band'
 import { RehearsalHub, parseRehearsalBody } from './rehearsal'
 import { SessionLog } from './rehearsalLog'
+import { ActivityLog, bandActivity } from './activity'
 import {
   MAX_UPLOAD_BYTES,
   UploadError,
@@ -330,6 +332,16 @@ const sessionLogOf = (bandId: string): SessionLog => {
   if (!l) {
     l = new SessionLog(SessionLog.fileOf(path.join(cfg.dataDir, BANDS_DIR), bandId))
     sessionLogs.set(bandId, l)
+  }
+  return l
+}
+/** Practice sittings of each band's members (for the 动态). */
+const activityLogs = new Map<string, ActivityLog>()
+const activityLogOf = (bandId: string): ActivityLog => {
+  let l = activityLogs.get(bandId)
+  if (!l) {
+    l = new ActivityLog(ActivityLog.fileOf(path.join(cfg.dataDir, BANDS_DIR), bandId))
+    activityLogs.set(bandId, l)
   }
   return l
 }
@@ -649,6 +661,23 @@ async function handlePractice(
       await persistPractice(new Map(practice).set(uid, r.list))
       return r.record
     })
+    // Time spent on a band's song shows in that band's 动态 (nobody has to report it).
+    const seconds = Math.min(update.addSeconds ?? 0, MAX_ADD_SECONDS)
+    if (seconds > 0)
+      for (const bandId of bands.bandIdsOf(uid)) {
+        const song = bands.store(bandId)?.songs().find((s) => s.path === update.path)
+        if (!song) continue
+        activityLogOf(bandId).practice(
+          {
+            userId: uid,
+            songId: song.id,
+            seconds,
+            speedPct: update.playedSpeedPct ?? null,
+            loopBars: record.loopBars,
+          },
+          Date.now(),
+        )
+      }
     return sendJson(res, 200, record)
   }
   // POST /api/practice/remove
@@ -816,6 +845,7 @@ function currentBand(ctx: BandCtx): BandState {
     users.list().filter((u) => memberIds.has(u.id)),
     (path) => progressFor(practice, path),
     sessionLogOf(ctx.id).sessions(),
+    bandActivity(ctx.store.songs(), activityLogOf(ctx.id).sittings(), sessionLogOf(ctx.id).sessions(), memberIds),
   )
 }
 
@@ -1416,6 +1446,8 @@ async function handleAdminBands(
     hubs.delete(id)
     await sessionLogOf(id).remove().catch(() => undefined)
     sessionLogs.delete(id)
+    await activityLogOf(id).remove().catch(() => undefined)
+    activityLogs.delete(id)
     log(`删除乐队：${name}`)
     return sendJson(res, 200, overview())
   }

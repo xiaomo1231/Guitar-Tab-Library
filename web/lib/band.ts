@@ -9,6 +9,7 @@ import {
   errorText,
   type AddBandSongBody,
   type BandState,
+  type MarkKind,
   type SongStatus,
   type UpdateBandSongBody,
 } from './api'
@@ -144,8 +145,9 @@ export const setLeader = async (userId: string) => {
   await reloadMe()
 }
 export const setSetlist = (ids: string[]) => commit(api.setRehearsalSetlist(ids))
-export const addComment = (songId: string, bar: number, text: string) =>
-  commit(api.addComment({ songId, bar, text }))
+/** A 小节留言, or with `kind` a one-tap 小节标记 (then `text` may be empty). */
+export const addComment = (songId: string, bar: number, text: string, kind?: MarkKind) =>
+  commit(api.addComment({ songId, bar, text, ...(kind ? { kind } : {}) }))
 export const setLyrics = (songId: string, lines: SheetLine[]) => commit(api.setLyrics({ songId, lines }))
 export const removeComment = (songId: string, commentId: string) =>
   commit(api.removeComment(songId, commentId))

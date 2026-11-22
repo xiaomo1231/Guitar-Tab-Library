@@ -150,6 +150,8 @@ export interface BandState {
   progress: Record<string, MemberProgress[]>
   /** 排练记录: the band's last rehearsals, newest first (written by the server). */
   sessions: RehearsalSession[]
+  /** 动态: practice, 小节标记 and rehearsals, newest first. */
+  activity: BandActivity[]
 }
 
 /** One song of a rehearsal: how often it was started, how long it sounded, the bars gone back to. */
@@ -277,22 +279,57 @@ export interface AddCommentBody {
   songId: string
   /** 1-based bar number. */
   bar: number
+  /** May be empty when `kind` says it all. */
   text: string
+  kind?: MarkKind
 }
 
-/** One 小节留言 on a band song. */
 /** POST /api/band/songs/lyrics: replaces the song's 词谱 (an empty list removes it). */
 export interface SetLyricsBody {
   songId: string
   lines: SheetLine[]
 }
 
+/** 小节标记, one tap: 这里我改了 / 这里有问题 / 这里注意. */
+export type MarkKind = 'changed' | 'problem' | 'note'
+
+/** One member's sitting with a band song (practice close together counts as one). */
+export interface PracticeSitting {
+  userId: string
+  songId: string
+  startedAt: number
+  /** Last practice of this sitting. */
+  at: number
+  seconds: number
+  maxSpeedPct: number
+  /** Looped ranges (1-based bars) and how long each was played. */
+  loops: { from: number; to: number; seconds: number }[]
+}
+
+/** One line of the band's 动态 (newest first in BandState.activity). */
+export type BandActivity =
+  | {
+      type: 'practice'
+      at: number
+      userId: string
+      songId: string
+      seconds: number
+      maxSpeedPct: number
+      /** The range looped the longest, when one was kept at; else null. */
+      loopBars: [number, number] | null
+    }
+  | { type: 'mark'; at: number; userId: string; songId: string; bar: number; kind: MarkKind | null; text: string }
+  | { type: 'session'; at: number; session: RehearsalSession }
+
+/** One 小节留言 / 小节标记 on a band song. */
 export interface BarComment {
   id: string
   /** 1-based bar number. */
   bar: number
-  /** Up to 200 chars. */
+  /** Up to 200 chars; may be empty on a 标记. */
   text: string
+  /** Set on a one-tap 标记; missing on a plain 留言. */
+  kind?: MarkKind
   userId: string
   at: number
 }
