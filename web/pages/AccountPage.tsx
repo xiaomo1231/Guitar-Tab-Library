@@ -3,18 +3,44 @@ import type { Instrument } from '@/songs/scoreServerTypes'
 import { api, errorText } from '../lib/api'
 import { buttonClass, cx, SELECT } from '../lib/classes'
 import { INSTRUMENT_LABELS, setMe, useMe } from '../lib/session'
-import { HREF_MINE, HREF_USERS } from '../lib/route'
+import { HREF_DAILY, HREF_FAVORITES, HREF_MINE, HREF_USERS } from '../lib/route'
+import { useFavorites } from '../lib/favorites'
+import { useLibrary } from '../lib/libraryContext'
+import { setTheme, useTheme } from '../lib/theme'
 import { Link } from '../components/Link'
-import { Notice, PageBar } from '../components/ui'
+import { Notice, PageBar, Seg } from '../components/ui'
 
 const INPUT =
   'h-11 w-full rounded-lg border border-border bg-transparent px-3 text-base text-foreground outline-none focus:border-primary'
 
 const MIN_PASSWORD = 6
 
-/** 我的账号: name, instrument, password, sign-out; admins also reach 成员管理. */
+/** A grouped list of rows on a raised surface. */
+const LIST = 'overflow-hidden rounded-[14px] border border-border bg-card'
+
+function RowLink({ href, label, hint }: { href: string; label: string; hint: string }) {
+  return (
+    <Link
+      href={href}
+      className="flex min-h-[60px] items-center gap-3 border-t border-border px-3.5 py-2 transition-colors first:border-t-0 hover:bg-[hsl(var(--raised))]"
+    >
+      <span className="min-w-0 flex-1">
+        <b className="block truncate font-bold">{label}</b>
+        <span className="block truncate text-[13px] text-muted-foreground">{hint}</span>
+      </span>
+      <span aria-hidden className="text-muted-foreground">
+        ›
+      </span>
+    </Link>
+  )
+}
+
+/** 我的: 收藏、每日一练、我的谱子, the page's colours, then the account (name, instrument, password, sign-out). */
 export function AccountPage() {
   const me = useMe()
+  const theme = useTheme()
+  const library = useLibrary()
+  const { items: favorites } = useFavorites()
   const [displayName, setDisplayName] = useState(me?.displayName ?? '')
   const [instrument, setInstrument] = useState<Instrument | ''>(me?.instrument ?? '')
   const [profileBusy, setProfileBusy] = useState(false)
@@ -33,7 +59,7 @@ export function AccountPage() {
   if (!me) {
     return (
       <>
-        <PageBar title="我的账号" fallback="#/" />
+        <PageBar title="我的" fallback="#/" back="" />
         <div className="max-w-[640px] py-6">
           <Notice>还没有登录。</Notice>
         </div>
@@ -41,6 +67,7 @@ export function AccountPage() {
     )
   }
 
+  const libraryHidden = me.role === 'member' && !me.libraryAccess
   const trimmedName = displayName.trim()
   const profileChanged =
     trimmedName !== me.displayName || (instrument || null) !== (me.instrument ?? null)
@@ -118,9 +145,48 @@ export function AccountPage() {
 
   return (
     <>
-      <PageBar title="我的账号" fallback="#/" />
+      <PageBar title="我的" subtitle={me.displayName} fallback="#/" back="" />
 
-      <div className="max-w-[640px] space-y-10 pb-20 pt-6">
+      <div className="max-w-[640px] space-y-10 pb-20 pt-2">
+        <nav aria-label="我的内容" className={LIST}>
+          {!libraryHidden && (
+            <RowLink href={HREF_FAVORITES} label="我的收藏" hint={`${favorites.length} 个`} />
+          )}
+          <RowLink href={HREF_DAILY} label="每日一练" hint="今天的练习" />
+          <RowLink href={HREF_MINE} label="我的谱子" hint="改编谱、上传的谱、组合乐队谱" />
+          {me.role === 'admin' && (
+            <RowLink href={HREF_USERS} label="管理" hint="乐队、账号和邀请码" />
+          )}
+        </nav>
+
+        <section className="space-y-3">
+          <h2 className="label m-0">外观</h2>
+          <Seg
+            label="外观"
+            value={theme}
+            options={[
+              ['dark', '深色'],
+              ['light', '浅色'],
+            ]}
+            onChange={setTheme}
+          />
+          <p className="text-xs text-muted-foreground">只在这台设备上生效，谱面的底色在看谱页里单独选。</p>
+        </section>
+
+        {me.role === 'admin' && (
+          <section className="space-y-3">
+            <h2 className="label m-0">谱库文件夹</h2>
+            <button
+              type="button"
+              onClick={() => library.rescan()}
+              disabled={library.scanning}
+              className={buttonClass('outline')}
+            >
+              {library.scanning ? '正在扫描…' : '重新扫描谱库'}
+            </button>
+          </section>
+        )}
+
         <section className="space-y-3">
           <h2 className="label m-0">账号</h2>
           <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-base">
@@ -241,34 +307,6 @@ export function AccountPage() {
             {pwBusy ? '正在修改…' : '修改密码'}
           </button>
         </form>
-
-        <section className="space-y-3">
-          <h2 className="label m-0">我的谱子</h2>
-          <Link
-            href={HREF_MINE}
-            className="flex min-h-11 items-center justify-between border-t border-border py-2 text-base font-bold transition-colors hover:text-primary"
-          >
-            <span>改编谱、上传的谱、组合乐队谱</span>
-            <span aria-hidden className="text-muted-foreground">
-              →
-            </span>
-          </Link>
-        </section>
-
-        {me.role === 'admin' && (
-          <section className="space-y-3">
-            <h2 className="label m-0">管理</h2>
-            <Link
-              href={HREF_USERS}
-              className="flex min-h-11 items-center justify-between border-t border-border py-2 text-base font-bold transition-colors hover:text-primary"
-            >
-              <span>乐队、账号和邀请码</span>
-              <span aria-hidden className="text-muted-foreground">
-                →
-              </span>
-            </Link>
-          </section>
-        )}
 
         <section className="space-y-3">
           <button

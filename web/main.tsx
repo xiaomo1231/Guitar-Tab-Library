@@ -3,7 +3,9 @@ import { createRoot } from 'react-dom/client'
 import './styles.css'
 import { App } from './App'
 import { startScrollMemory } from './lib/scrollMemory'
+import { startTheme } from './lib/theme'
 
+startTheme()
 startScrollMemory()
 
 const container = document.getElementById('root')

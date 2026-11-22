@@ -4,40 +4,41 @@
 
 /*
  * 「曲谱本」: a printed songbook — contents page, back-of-book index,
- * full-width tab — annotated in ballpoint blue, the one accent. Ink on cool
- * paper by default; the night page when the system is dark. Tailwind's colour
+ * full-width tab — annotated in ballpoint blue, the one accent. The night
+ * page by default; the paper page when 浅色 is chosen. Tailwind's colour
  * names (background, card, primary…) read these variables.
  */
 :root {
-  color-scheme: light;
+  color-scheme: dark;
   --font-body: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
   --font-title: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
-  /* paper #edefea, paper-2 #e2e5df, ink #14171a, ink-2 #5b625e, rule #c5cac3, pen #2443d6 */
-  --background: 90 10% 93%;
-  --foreground: 210 13% 9%;
-  --card: 90 9% 89%;
-  --card-foreground: 210 13% 9%;
-  --primary: 229 71% 49%;
-  --primary-strong: 229 71% 42%;
-  --primary-foreground: 0 0% 100%;
-  --secondary: 90 9% 89%;
-  --secondary-foreground: 210 13% 9%;
-  --muted: 90 9% 89%;
-  --muted-foreground: 150 4% 37%;
-  --accent: 229 40% 88%;
-  --accent-foreground: 210 13% 9%;
-  --destructive: 4 70% 45%;
-  --destructive-foreground: 0 0% 100%;
-  --success: 150 40% 32%;
-  --success-foreground: 0 0% 100%;
-  --border: 105 6% 78%;
-  --input: 105 6% 74%;
-  --ring: 229 71% 49%;
-  --amber: 229 71% 49%;
-  --amber-soft: 229 40% 88%;
-  --cyan: 229 71% 49%;
-  --cyan-soft: 229 40% 88%;
+  /* page #0f1114, surface #181b20, raised #22262d, line #2c3139, ink #eceef1, ink-2 #9aa2ad, pen #8a9bff */
+  --background: 216 14% 7%;
+  --foreground: 216 15% 93%;
+  --card: 218 14% 11%;
+  --card-foreground: 216 15% 93%;
+  --raised: 218 14% 15%;
+  --primary: 231 100% 77%;
+  --primary-strong: 231 90% 70%;
+  --primary-foreground: 231 55% 12%;
+  --secondary: 218 14% 11%;
+  --secondary-foreground: 216 15% 93%;
+  --muted: 218 14% 11%;
+  --muted-foreground: 215 10% 64%;
+  --accent: 231 40% 20%;
+  --accent-foreground: 216 15% 93%;
+  --destructive: 7 82% 68%;
+  --destructive-foreground: 0 0% 8%;
+  --success: 143 55% 59%;
+  --success-foreground: 0 0% 8%;
+  --border: 217 13% 20%;
+  --input: 217 13% 28%;
+  --ring: 231 100% 77%;
+  --amber: 231 100% 77%;
+  --amber-soft: 231 40% 20%;
+  --cyan: 231 100% 77%;
+  --cyan-soft: 231 40% 20%;
   /* the score's sheet: night by default (.sheet-paper switches to paper) */
   --sheet-bg: #121417;
   --sheet-line: #50575c;
@@ -52,39 +53,39 @@
   --radius-2xl: 0.875rem;
   --radius-3xl: 1rem;
   --shadow-soft: 0 1px 0 0 hsl(var(--border));
-  --shadow-lift: 0 18px 50px -20px rgb(0 0 0 / 0.45);
+  --shadow-lift: 0 18px 50px -20px rgb(0 0 0 / 0.75);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    color-scheme: dark;
-    /* paper #0f1113, paper-2 #181b1e, ink #e6e9e3, ink-2 #8f9792, rule #2b3033, pen #8095ff */
-    --background: 210 13% 7%;
-    --foreground: 90 10% 90%;
-    --card: 210 11% 11%;
-    --card-foreground: 90 10% 90%;
-    --primary: 230 100% 75%;
-    --primary-strong: 230 90% 68%;
-    --primary-foreground: 230 60% 12%;
-    --secondary: 210 11% 11%;
-    --secondary-foreground: 90 10% 90%;
-    --muted: 210 11% 11%;
-    --muted-foreground: 140 4% 57%;
-    --accent: 230 28% 18%;
-    --accent-foreground: 90 10% 90%;
-    --destructive: 4 80% 66%;
-    --destructive-foreground: 0 0% 8%;
-    --success: 150 40% 60%;
-    --success-foreground: 0 0% 8%;
-    --border: 200 9% 19%;
-    --input: 200 9% 24%;
-    --ring: 230 100% 75%;
-    --amber: 230 100% 75%;
-    --amber-soft: 230 28% 18%;
-    --cyan: 230 100% 75%;
-    --cyan-soft: 230 28% 18%;
-    --shadow-lift: 0 18px 50px -20px rgb(0 0 0 / 0.75);
-  }
+/* The light page, chosen in 我的 (kept on the device). */
+:root[data-theme='light'] {
+  color-scheme: light;
+  /* page #f3f4f6, surface #ffffff, raised #eceef2, line #d9dde3, ink #14171c, ink-2 #56606b, pen #2f4bd8 */
+  --background: 220 14% 96%;
+  --foreground: 218 17% 9%;
+  --card: 0 0% 100%;
+  --card-foreground: 218 17% 9%;
+  --raised: 220 19% 94%;
+  --primary: 230 68% 52%;
+  --primary-strong: 230 68% 44%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 0 0% 100%;
+  --secondary-foreground: 218 17% 9%;
+  --muted: 0 0% 100%;
+  --muted-foreground: 211 11% 38%;
+  --accent: 230 70% 93%;
+  --accent-foreground: 218 17% 9%;
+  --destructive: 7 61% 47%;
+  --destructive-foreground: 0 0% 100%;
+  --success: 145 64% 30%;
+  --success-foreground: 0 0% 100%;
+  --border: 216 15% 87%;
+  --input: 216 15% 78%;
+  --ring: 230 68% 52%;
+  --amber: 230 68% 52%;
+  --amber-soft: 230 70% 93%;
+  --cyan: 230 68% 52%;
+  --cyan-soft: 230 70% 93%;
+  --shadow-lift: 0 18px 50px -20px rgb(0 0 0 / 0.35);
 }
 
 @layer base {

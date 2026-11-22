@@ -5,7 +5,15 @@ import { dailyStaffNotes } from '@/songs/dailyStaff'
 import { useFavorites } from '../lib/favorites'
 import { usePractice } from '../lib/practice'
 import { libraryName } from '../lib/format'
-import { hrefCategory, hrefGroup, hrefViewer, HREF_DAILY, HREF_FAVORITES, HREF_MINE } from '../lib/route'
+import {
+  hrefCategory,
+  hrefGroup,
+  hrefSearch,
+  hrefViewer,
+  HREF_DAILY,
+  HREF_FAVORITES,
+  HREF_MINE,
+} from '../lib/route'
 import { MINE_KIND_LABEL, mineRows, useMine } from '../lib/mine'
 import { useLibrary } from '../lib/libraryContext'
 import { readRecent, type RecentItem } from '../lib/recent'
@@ -46,6 +54,27 @@ export function Home() {
           </p>
         )}
       </div>
+      <Link
+        href={hrefSearch()}
+        ariaLabel="搜索谱"
+        className="mb-6 flex min-h-[54px] items-center gap-2.5 rounded-[14px] border border-border bg-card px-3.5 text-base text-muted-foreground transition-colors hover:border-foreground"
+      >
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.2"
+          strokeLinecap="round"
+          aria-hidden="true"
+          className="shrink-0"
+        >
+          <circle cx="10.5" cy="10.5" r="6.5" />
+          <path d="M15.5 15.5 21 21" />
+        </svg>
+        <span>搜歌名、歌手，或者拼音首字母</span>
+      </Link>
       <Staff />
 
       <div className="grid gap-10 pb-20 pt-7 min-[861px]:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)] min-[861px]:gap-14">
