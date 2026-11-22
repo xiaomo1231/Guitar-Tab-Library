@@ -75,6 +75,7 @@ import {
   parseAddSong,
   parseRename,
   parseAddComment,
+  parseSetLyrics,
   parseSetlist,
   parseReorder,
   parseUpdateSong,
@@ -876,6 +877,9 @@ async function handleBand(
     const u = uploads.get(typeof body.uploadId === 'string' ? body.uploadId : '')
     if (!u || u.bandId !== ctx.id) throw new HttpError(404, '找不到这首上传的歌。')
     await addUploadToBand(ctx, u, me, now)
+  } else if (p === '/api/band/songs/lyrics') {
+    // The words are the band's: any member may put them in or align them.
+    await band.setLyrics(orBadRequest(parseSetLyrics(body)), now).catch(asHttp)
   } else if (p === '/api/band/comments/add') {
     await band.addComment(orBadRequest(parseAddComment(body)), me.id, now).catch(asHttp)
   } else if (p === '/api/band/comments/remove') {

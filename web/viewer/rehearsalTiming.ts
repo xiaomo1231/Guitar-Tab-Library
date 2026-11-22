@@ -6,7 +6,7 @@
  * by its own latency.
  */
 import type { RehearsalDevice, RehearsalState } from '../lib/api'
-import { referenceDeviceId } from '@/songs/scoreServerTypes'
+import { referenceDeviceId } from '@/songs/rehearsalSections'
 
 /** The device whose player is the reference (see referenceDeviceId: one that is there). */
 export function referenceDevice(state: RehearsalState): RehearsalDevice | null {

@@ -16,6 +16,7 @@ import {
   parseReorder,
   parseRename,
   parseSetlist,
+  parseSetLyrics,
   parseUpdateSong,
 } from '../server/band'
 import type { FillConfig } from '../src/songs/scoreServerTypes'
@@ -803,5 +804,93 @@ describe('band file round trip', () => {
       comments: [{ bar: 5, text: '慢', userId: 'u2', at: 4 }],
     })
     expect(reader.get(b.id)?.fill).toBeUndefined()
+  })
+})
+
+describe('词谱', () => {
+  const sheet = [
+    { text: '第一句', bar: 5, section: '主歌' },
+    { text: '第二句', bar: null, section: null },
+  ]
+
+  it('parseSetLyrics accepts a song and well-formed lines', () => {
+    expect(parseSetLyrics({ songId: 'a', lines: sheet })).toEqual({ ok: true, value: { songId: 'a', lines: sheet } })
+    expect(parseSetLyrics({ songId: 'a', lines: [{ text: '  词  ', section: ' 副歌 ' }] })).toEqual({
+      ok: true,
+      value: { songId: 'a', lines: [{ text: '词', bar: null, section: '副歌' }] },
+    })
+    expect(parseSetLyrics({ songId: 'a', lines: [] })).toEqual({ ok: true, value: { songId: 'a', lines: [] } })
+  })
+
+  it('parseSetLyrics rejects a bad song id or bad lines', () => {
+    expect(parseSetLyrics({ lines: [] }).ok).toBe(false)
+    expect(parseSetLyrics({ songId: '', lines: [] }).ok).toBe(false)
+    expect(parseSetLyrics({ songId: 7, lines: [] }).ok).toBe(false)
+    expect(parseSetLyrics({ songId: 'x'.repeat(65), lines: [] }).ok).toBe(false)
+    expect(parseSetLyrics({ songId: 'a' }).ok).toBe(false)
+    expect(parseSetLyrics({ songId: 'a', lines: 'text' }).ok).toBe(false)
+    expect(parseSetLyrics({ songId: 'a', lines: [{ text: '' }] }).ok).toBe(false)
+    expect(parseSetLyrics({ songId: 'a', lines: [{ text: 'a', bar: 0 }] }).ok).toBe(false)
+    const bad = parseSetLyrics({ songId: 'a', lines: [{ text: 'a', bar: 1.5 }] })
+    expect(bad).toEqual({ ok: false, error: '歌词对应的小节号不对。' })
+  })
+
+  it('setLyrics stores the lines, bumps updatedAt and writes the file', async () => {
+    const store = await BandStore.load(dir, inRoot)
+    const a = await store.add({ path: 'a.gp5', title: 'A', artist: '' }, 'u1', 1)
+    const s = await store.setLyrics({ songId: a.id, lines: sheet }, 20)
+    expect(s.lyrics).toEqual(sheet)
+    expect(s.updatedAt).toBe(20)
+    expect(store.get(a.id)?.lyrics).toEqual(sheet)
+    expect(readFile().songs[0].lyrics).toEqual(sheet)
+  })
+
+  it('setLyrics replaces the lines', async () => {
+    const store = await BandStore.load(dir, inRoot)
+    const a = await store.add({ path: 'a.gp5', title: 'A', artist: '' }, 'u1', 1)
+    await store.setLyrics({ songId: a.id, lines: sheet }, 2)
+    const next = [{ text: '新词', bar: 1, section: null }]
+    const s = await store.setLyrics({ songId: a.id, lines: next }, 3)
+    expect(s.lyrics).toEqual(next)
+    expect(store.get(a.id)?.lyrics).toEqual(next)
+  })
+
+  it('setLyrics with no lines removes the field', async () => {
+    const store = await BandStore.load(dir, inRoot)
+    const a = await store.add({ path: 'a.gp5', title: 'A', artist: '' }, 'u1', 1)
+    await store.setLyrics({ songId: a.id, lines: sheet }, 2)
+    const s = await store.setLyrics({ songId: a.id, lines: [] }, 3)
+    expect(s).not.toHaveProperty('lyrics')
+    expect(s.updatedAt).toBe(3)
+    expect(store.get(a.id)).not.toHaveProperty('lyrics')
+    expect(readFile().songs[0]).not.toHaveProperty('lyrics')
+  })
+
+  it('setLyrics of an unknown song is a 404', async () => {
+    const store = await BandStore.load(dir, inRoot)
+    const err = await store.setLyrics({ songId: 'nope', lines: sheet }, 1).catch((e) => e)
+    expect(err).toBeInstanceOf(BandError)
+    expect(err.status).toBe(404)
+  })
+
+  it('lyrics survive a reload, and a song without lyrics stays without', async () => {
+    const writer = await BandStore.load(dir, inRoot)
+    const a = await writer.add({ path: 'a.gp5', title: 'A', artist: '' }, 'u1', 1)
+    const b = await writer.add({ path: 'b.gp5', title: 'B', artist: '' }, 'u1', 2)
+    await writer.setLyrics({ songId: a.id, lines: sheet }, 3)
+    const reader = await BandStore.load(dir, inRoot)
+    expect(reader.get(a.id)?.lyrics).toEqual(sheet)
+    expect(reader.get(b.id)).not.toHaveProperty('lyrics')
+  })
+
+  it('load drops malformed stored lyrics but keeps the song', async () => {
+    const writer = await BandStore.load(dir, inRoot)
+    const a = await writer.add({ path: 'a.gp5', title: 'A', artist: '' }, 'u1', 1)
+    const file = readFile()
+    file.songs[0].lyrics = [{ text: '', bar: -3 }]
+    fs.writeFileSync(path.join(dir, 'band.json'), JSON.stringify(file))
+    const reader = await BandStore.load(dir, inRoot)
+    expect(reader.get(a.id)).toBeDefined()
+    expect(reader.get(a.id)).not.toHaveProperty('lyrics')
   })
 })

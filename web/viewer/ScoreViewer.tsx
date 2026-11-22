@@ -21,7 +21,9 @@ import { CommentsLayer } from './CommentsLayer'
 import { CommentsPanel } from './CommentsPanel'
 import { FillPanel } from './FillPanel'
 import { LatencyCalibration } from './LatencyCalibration'
-import { addComment, removeComment, updateSong } from '../lib/band'
+import { addComment, removeComment, setLyrics, updateSong } from '../lib/band'
+import { LyricSheetPanel } from './LyricSheetPanel'
+import { chordsByBar, type ChordScore } from './scoreChords'
 import { openInRehearsal } from '../lib/rehearsalNav'
 import { sendRehearsal } from '../lib/rehearsal'
 import { useDrumStyles } from '../lib/drums'
@@ -104,6 +106,8 @@ const SHEET_CSS = `
 .score-sheet .at-surface { min-height: 12rem; position: relative; z-index: 0; isolation: isolate; }
 /* alphaTab's cursor layer (z-index 1000) stays inside the sheet, under the header, fretboard and remote. */
 `
+
+const LYRICS_OPEN_KEY = 'gl-lyrics-open'
 
 type Phase = 'loading' | 'ready' | 'error'
 
@@ -245,6 +249,23 @@ export function ScoreViewer({
   const [time, setTime] = useState({ now: 0, end: 0, tick: 0 })
   const [restoreNote, setRestoreNote] = useState('')
   const [sheetsOpen, setSheetsOpen] = useState(false)
+  // 词谱: open by itself for a singer once the song has lyrics; a tap is remembered on this device.
+  const [lyricsOpen, setLyricsOpen] = useState<boolean | null>(() => {
+    try {
+      const v = localStorage.getItem(LYRICS_OPEN_KEY)
+      return v === '1' ? true : v === '0' ? false : null
+    } catch {
+      return null
+    }
+  })
+  const toggleLyrics = (open: boolean) => {
+    setLyricsOpen(open)
+    try {
+      localStorage.setItem(LYRICS_OPEN_KEY, open ? '1' : '0')
+    } catch {
+      // Private mode: it stays for this visit.
+    }
+  }
   /** PDF 转换版: its record (for 用户品鉴). */
   const [convRec, setConvRec] = useState<ConversionRecord | null>(null)
   useEffect(() => {
@@ -1446,6 +1467,9 @@ export function ScoreViewer({
     else break
   }
   const sections = useMemo(() => sectionsOf((score?.masterBars ?? []) as never), [score])
+  const chords = useMemo(() => chordsByBar(score as unknown as ChordScore | null), [score])
+  const lyricLines = bandSong?.lyrics ?? []
+  const showLyrics = lyricsOpen ?? (me?.instrument === 'vocal' && lyricLines.length > 0)
   const sectionIdx = sectionAt(sections, bar)
   const nextSec = nextSection(sections, bar)
   const loaded = phase === 'ready'
@@ -1721,12 +1745,48 @@ export function ScoreViewer({
         >
           {sheetsOpen ? '收起简谱 / 歌词谱 ▴' : '简谱 / 歌词谱（上传的）▾'}
         </button>
+        {bandSong && (
+          <button
+            type="button"
+            className="ml-4 text-xs text-muted-foreground underline-offset-4 hover:underline"
+            aria-expanded={showLyrics}
+            onClick={() => toggleLyrics(!showLyrics)}
+          >
+            {showLyrics ? '收起词谱 ▴' : lyricLines.length > 0 ? '词谱（歌词跟着走）▾' : '词谱（还没有歌词）▾'}
+          </button>
+        )}
         {sheetsOpen && (
           <div className="mt-2">
             <SheetsPanel path={path} />
           </div>
         )}
       </div>
+      {bandSong && showLyrics && (
+        // Stays under the header (and the rehearsal's status line) while the score scrolls below.
+        <div className="sticky z-20" style={{ top: headerH + (reh.here ? 44 : 0) }}>
+          <div className="gutter mx-auto mb-2 w-full max-w-[1180px]">
+            <div
+              className="overflow-y-auto rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3"
+              style={{ maxHeight: '46vh' }}
+            >
+              <LyricSheetPanel
+                lines={lyricLines}
+                bar={bar}
+                totalBars={masterBars.length}
+                chords={chords}
+                playing={playing}
+                canControl={!following}
+                onJumpBar={(b) => {
+                  const tick = barTicks(api.current, score, b)[0]
+                  if (leading) void sendRehearsal({ type: 'seek', tick, bar: b }).catch(() => undefined)
+                  else if (api.current) api.current.tickPosition = tick
+                }}
+                onSave={(lines) => setLyrics(bandSong.id, lines)}
+              />
+            </div>
+          </div>
+        </div>
+      )}
       {phase === 'error' && (
         <div className="px-4">
           <Notice tone="error">{message}</Notice>
