@@ -14,9 +14,11 @@ import type {
   RehearsalLoop,
   RehearsalRequest,
   RehearsalState,
+  RehearsalSession,
 } from '../src/songs/scoreServerTypes'
 import { referenceDeviceId } from '../src/songs/scoreServerTypes'
 import type { ParseResult } from './favorites'
+import { SessionTracker } from './rehearsalLog'
 
 /** Time between a play / seek command and the shared start, so every device receives it first. */
 export const START_DELAY_MS = 1500
@@ -151,13 +153,26 @@ function parseCommand(raw: unknown): ParseResult<RehearsalCommand> {
     case 'play':
       if (!tickOk(rec.tick)) return fail('播放位置不对。')
       if (!speedOk(rec.speedPct)) return fail(speedMsg)
-      return { ok: true, value: { type: 'play', tick: rec.tick, speedPct: rec.speedPct } }
+      if (rec.bar !== undefined && !isInt(rec.bar, 1, MAX_BAR)) return fail('小节号不对。')
+      return {
+        ok: true,
+        value: {
+          type: 'play',
+          tick: rec.tick,
+          speedPct: rec.speedPct,
+          ...(rec.bar !== undefined ? { bar: rec.bar as number } : {}),
+        },
+      }
     case 'pause':
       if (!tickOk(rec.tick)) return fail('播放位置不对。')
       return { ok: true, value: { type: 'pause', tick: rec.tick } }
     case 'seek':
       if (!tickOk(rec.tick)) return fail('播放位置不对。')
-      return { ok: true, value: { type: 'seek', tick: rec.tick } }
+      if (rec.bar !== undefined && !isInt(rec.bar, 1, MAX_BAR)) return fail('小节号不对。')
+      return {
+        ok: true,
+        value: { type: 'seek', tick: rec.tick, ...(rec.bar !== undefined ? { bar: rec.bar as number } : {}) },
+      }
     case 'speed':
       if (!speedOk(rec.speedPct)) return fail(speedMsg)
       return { ok: true, value: { type: 'speed', speedPct: rec.speedPct } }
@@ -556,7 +571,31 @@ const copyState = (s: RehearsalState): RehearsalState => ({
 
 /** The band's one rehearsal room: holds the state and the SSE streams of every device. */
 export class RehearsalHub {
-  private room: RehearsalState = freshRehearsal()
+  private current: RehearsalState = freshRehearsal()
+  private readonly tracker = new SessionTracker()
+  /** The bar named by the command being applied (for the 排练记录). */
+  private commandBar: number | null = null
+
+  /** `onSession`: called with the summary of every rehearsal that ends (排练记录). */
+  constructor(private readonly onSession?: (session: RehearsalSession) => void) {}
+
+  private get room(): RehearsalState {
+    return this.current
+  }
+
+  /** Every change of the room goes through here, so the 排练记录 sees all of them. */
+  private set room(next: RehearsalState) {
+    const prev = this.current
+    this.current = next
+    const session = this.tracker.observe(prev, next, Date.now(), this.commandBar)
+    if (session && this.onSession) {
+      try {
+        this.onSession(session)
+      } catch {
+        // The record is a convenience: it never gets in the way of the rehearsal.
+      }
+    }
+  }
   private readonly conns = new Set<Conn>()
   private readonly deviceGraces = new Map<string, ReturnType<typeof setTimeout>>()
   private leaderGrace: ReturnType<typeof setTimeout> | null = null
@@ -604,7 +643,12 @@ export class RehearsalHub {
   command(actor: Actor, cmd: RehearsalCommand, ctx: Ctx): RehearsalResult {
     const result = applyRehearsal(this.room, actor, cmd, ctx)
     if ('error' in result) return result
-    this.room = result.state
+    this.commandBar = cmd.type === 'play' || cmd.type === 'seek' ? (cmd.bar ?? null) : null
+    try {
+      this.room = result.state
+    } finally {
+      this.commandBar = null
+    }
     this.reconcileLeaderGrace()
     // Play pressed while the 音箱 is away: it gets the same short wait as one that leaves.
     const speaker = this.room.speakerDevice

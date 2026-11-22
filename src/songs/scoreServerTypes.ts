@@ -144,6 +144,26 @@ export interface BandState {
   members: UserInfo[]
   /** songId → the members' practice of it (members who never practised it are left out). */
   progress: Record<string, MemberProgress[]>
+  /** 排练记录: the band's last rehearsals, newest first (written by the server). */
+  sessions: RehearsalSession[]
+}
+
+/** One song of a rehearsal: how often it was started, how long it sounded, the bars gone back to. */
+export interface RehearsalSessionSong {
+  songId: string
+  /** The song's title when the rehearsal ended (the song may be gone since). */
+  title: string
+  playMs: number
+  starts: number
+  /** Bars the band started from at least twice, most often first (bar 1 left out). */
+  hotBars: { bar: number; count: number }[]
+}
+
+/** 排练记录 of one rehearsal. */
+export interface RehearsalSession {
+  startedAt: number
+  endedAt: number
+  songs: RehearsalSessionSong[]
 }
 
 /** POST /api/band/songs/add */
@@ -390,9 +410,10 @@ export type RehearsalCommand =
   | { type: 'lead'; take: boolean }
   | { type: 'speaker'; take: boolean }
   | { type: 'song'; songId: string }
-  | { type: 'play'; tick: number; speedPct: number }
+  /** `bar`: the bar of `tick` (1-based), for the 排练记录; optional. */
+  | { type: 'play'; tick: number; speedPct: number; bar?: number }
   | { type: 'pause'; tick: number }
-  | { type: 'seek'; tick: number }
+  | { type: 'seek'; tick: number; bar?: number }
   | { type: 'speed'; speedPct: number }
   | { type: 'countIn'; on: boolean }
   | { type: 'loop'; loop: RehearsalLoop | null }

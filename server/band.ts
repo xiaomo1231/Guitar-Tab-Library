@@ -19,6 +19,7 @@ import type {
   FillDrumSource,
   FillMode,
   MemberProgress,
+  RehearsalSession,
   SongStatus,
   UpdateBandSongBody,
   UserInfo,
@@ -596,6 +597,7 @@ export function bandState(
   meta: { id: string; leaderId: string; limits: BandLimits; storageUsed: number },
   members: UserInfo[],
   progress: (path: string) => MemberProgress[],
+  sessions: RehearsalSession[] = [],
 ): BandState {
   const memberIds = new Set(members.map((m) => m.id))
   const songs = store.songs()
@@ -614,5 +616,7 @@ export function bandState(
     rehearsalSetlist: store.setlist(),
     members: [...members],
     progress: progressById,
+    // Newest first for the page.
+    sessions: [...sessions].reverse(),
   }
 }

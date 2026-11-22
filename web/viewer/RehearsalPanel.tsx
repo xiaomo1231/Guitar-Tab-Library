@@ -128,7 +128,6 @@ export function RehearsalPanel(props: RehearsalPanelProps) {
     currentBar,
     bars,
     selection,
-    commentCount,
     latencyMs,
     onCommand,
     tickOfBar,
@@ -136,11 +135,12 @@ export function RehearsalPanel(props: RehearsalPanelProps) {
     onSeekBar,
     onPlayFromBar,
     onOpenFill,
-    onOpenComments,
     onCalibrate,
   } = props
 
   const [open, setOpen] = useState(readOpen)
+  // 设备设置 is folded away by default: in the room people just play.
+  const [deviceOpen, setDeviceOpen] = useState(false)
   const toggleOpen = () => {
     const next = !open
     setOpen(next)
@@ -196,6 +196,18 @@ export function RehearsalPanel(props: RehearsalPanelProps) {
 
   const requestBar = selection?.[0] ?? currentBar
 
+  const noSpeaker = state.speakerDevice === null
+  const speakerButton = (
+    <button
+      type="button"
+      className={BTN}
+      title="音箱这台设备负责出声，接排练室的音箱。"
+      onClick={() => onCommand({ type: 'speaker', take: !isSpeaker })}
+    >
+      {isSpeaker ? '不当音箱' : '设为音箱'}
+    </button>
+  )
+
   return (
     <section
       aria-label="排练控制"
@@ -204,16 +216,16 @@ export function RehearsalPanel(props: RehearsalPanelProps) {
       {/* header */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
         <span className="font-medium">排练中</span>
-        <span className={`inline-flex items-center gap-1.5 ${MUTED}`}>
-          <span
-            aria-hidden="true"
-            className="inline-block h-2 w-2 rounded-full"
-            style={{
-              background: connected ? 'hsl(var(--primary))' : 'hsl(var(--muted-foreground))',
-            }}
-          />
-          {connected ? '已连接' : '未连接'}
-        </span>
+        {!connected && (
+          <span className={`inline-flex items-center gap-1.5 ${MUTED}`}>
+            <span
+              aria-hidden="true"
+              className="inline-block h-2 w-2 rounded-full"
+              style={{ background: 'hsl(var(--muted-foreground))' }}
+            />
+            未连接
+          </span>
+        )}
         {songIndex >= 0 && (
           <span className={MUTED} style={MONO}>
             第 {songIndex + 1}/{setlist.length} 首
@@ -250,48 +262,6 @@ export function RehearsalPanel(props: RehearsalPanelProps) {
 
       {open && (
         <div className="mt-3 flex flex-col gap-3">
-          {/* this device */}
-          <div className="flex flex-wrap items-center gap-2">
-            <span className={CHIP_PRIMARY}>{role}</span>
-            <button
-              type="button"
-              className={BTN}
-              title="音箱这台设备负责出声，接排练室的音箱。"
-              onClick={() => onCommand({ type: 'speaker', take: !isSpeaker })}
-            >
-              {isSpeaker ? '不当音箱' : '设为音箱'}
-            </button>
-            {!isSpeaker && (
-              <button
-                type="button"
-                className={`${BTN} ${myDevice?.audible ? BTN_ON : ''}`}
-                aria-pressed={myDevice?.audible ?? false}
-                disabled={!myDevice}
-                onClick={() => onCommand({ type: 'device', audible: !myDevice?.audible })}
-              >
-                这台也出声（戴耳机）
-              </button>
-            )}
-            <button type="button" className={BTN} onClick={onCalibrate}>
-              校准延迟（{latencyMs} 毫秒）
-            </button>
-            <button
-              type="button"
-              className={`${BTN} ${myDevice?.ready ? BTN_ON : ''}`}
-              aria-pressed={myDevice?.ready ?? false}
-              disabled={!myDevice}
-              onClick={() => onCommand({ type: 'device', ready: !myDevice?.ready })}
-            >
-              我准备好了
-            </button>
-            <button type="button" className={BTN} onClick={onOpenFill}>
-              补位
-            </button>
-            <button type="button" className={BTN} onClick={onOpenComments}>
-              留言 ({commentCount})
-            </button>
-          </div>
-
           {/* conductor controls */}
           {isLeader && (
             <div className="flex flex-col gap-3 rounded-md border border-[hsl(var(--border))] p-2.5">
@@ -503,20 +473,19 @@ export function RehearsalPanel(props: RehearsalPanelProps) {
             </div>
           )}
 
-          {/* not the conductor */}
+          {/* not the conductor: one-tap request */}
           {!isLeader && (
             <div className="flex flex-wrap items-center gap-2">
-              {leaderPresent ? (
-                <span className={MUTED}>由 {leaderName} 指挥</span>
-              ) : (
-                <button
-                  type="button"
-                  className={BTN}
-                  onClick={() => onCommand({ type: 'lead', take: true })}
-                >
-                  我来当指挥
-                </button>
-              )}
+              <button
+                type="button"
+                className={BTN}
+                onClick={() =>
+                  onCommand({ type: 'request', bar: requestBar, tick: tickOfBar(requestBar) })
+                }
+              >
+                提议从第 {requestBar} 小节来
+              </button>
+              <span className={`${MUTED} text-xs`}>在谱上点一个小节可以选别的位置</span>
             </div>
           )}
 
@@ -569,73 +538,117 @@ export function RehearsalPanel(props: RehearsalPanelProps) {
             </ul>
           )}
 
-          {!isLeader && (
+          {/* nobody conducts / nobody is the speaker: someone must take it */}
+          {((!isLeader && !leaderPresent) || noSpeaker) && (
             <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                className={BTN}
-                onClick={() =>
-                  onCommand({ type: 'request', bar: requestBar, tick: tickOfBar(requestBar) })
-                }
-              >
-                提议从第 {requestBar} 小节来
-              </button>
-              <span className={`${MUTED} text-xs`}>在谱上点一个小节可以选别的位置</span>
+              {!isLeader && !leaderPresent && (
+                <button
+                  type="button"
+                  className={BTN}
+                  onClick={() => onCommand({ type: 'lead', take: true })}
+                >
+                  我来当指挥
+                </button>
+              )}
+              {noSpeaker && speakerButton}
             </div>
           )}
 
-          {/* devices */}
-          {state.devices.length > 0 && (
-            <ul className="flex flex-col gap-1" aria-label="设备">
-              {state.devices.map((d) => {
-                const isThisLeader = d.userId === state.leaderId
-                const isThisSpeaker = d.deviceId === state.speakerDevice
-                const drift = d.driftMs === null ? null : Math.round(Math.abs(d.driftMs))
-                let driftNode = null
-                if (d.driftMs !== null && drift !== null) {
-                  if (Math.abs(d.driftMs) < 50) {
-                    driftNode = (
-                      <span className="text-[hsl(var(--primary))]" style={MONO}>
-                        同步
-                      </span>
+          {/* this device: settings folded away */}
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              className={`${BTN} ${deviceOpen ? BTN_ON : ''}`}
+              aria-expanded={deviceOpen}
+              aria-controls="rehearsal-device-settings"
+              onClick={() => setDeviceOpen((v) => !v)}
+            >
+              设备设置 {deviceOpen ? '▴' : '▾'}
+            </button>
+            <span className={CHIP_PRIMARY}>{role}</span>
+          </div>
+
+          {deviceOpen && (
+            <div id="rehearsal-device-settings" className="flex flex-col gap-3">
+              <div className="flex flex-wrap items-center gap-2">
+                {!noSpeaker && speakerButton}
+                {!isSpeaker && (
+                  <button
+                    type="button"
+                    className={`${BTN} ${myDevice?.audible ? BTN_ON : ''}`}
+                    aria-pressed={myDevice?.audible ?? false}
+                    disabled={!myDevice}
+                    onClick={() => onCommand({ type: 'device', audible: !myDevice?.audible })}
+                  >
+                    这台也出声（戴耳机）
+                  </button>
+                )}
+                <button type="button" className={BTN} onClick={onCalibrate}>
+                  校准延迟（{latencyMs} 毫秒）
+                </button>
+                <button type="button" className={BTN} onClick={onOpenFill}>
+                  补位
+                </button>
+              </div>
+
+              {/* devices */}
+              {state.devices.length > 0 && (
+                <ul className="flex flex-col gap-1" aria-label="设备">
+                  {state.devices.map((d) => {
+                    const isThisLeader = d.userId === state.leaderId
+                    const isThisSpeaker = d.deviceId === state.speakerDevice
+                    const drift = d.driftMs === null ? null : Math.round(Math.abs(d.driftMs))
+                    let driftNode = null
+                    if (d.driftMs !== null && drift !== null) {
+                      if (Math.abs(d.driftMs) < 50) {
+                        driftNode = (
+                          <span className="text-[hsl(var(--primary))]" style={MONO}>
+                            同步
+                          </span>
+                        )
+                      } else if (Math.abs(d.driftMs) < 120) {
+                        driftNode = (
+                          <span className="text-amber-600 dark:text-amber-400" style={MONO}>
+                            差 {drift} ms
+                          </span>
+                        )
+                      } else {
+                        driftNode = (
+                          <span className="text-destructive" style={MONO}>
+                            差 {drift} ms
+                          </span>
+                        )
+                      }
+                    }
+                    return (
+                      <li
+                        key={d.deviceId}
+                        className="flex flex-wrap items-center gap-x-2 gap-y-0.5"
+                      >
+                        <span>
+                          {nameOf(d.userId)} · {d.label}
+                        </span>
+                        {!d.connected && <span className={`${CHIP} ${MUTED}`}>离线</span>}
+                        {isThisLeader && <span className={CHIP_PRIMARY}>指挥</span>}
+                        {isThisSpeaker && <span className={CHIP_PRIMARY}>音箱</span>}
+                        {!isThisSpeaker && d.audible && <span className={CHIP}>耳机</span>}
+                        {d.ready && (
+                          <span className="text-[hsl(var(--primary))]" aria-label="已准备好">
+                            ✓
+                          </span>
+                        )}
+                        {d.latencyMs > 0 && (
+                          <span className={MUTED} style={MONO}>
+                            延迟 {d.latencyMs} ms
+                          </span>
+                        )}
+                        {driftNode}
+                      </li>
                     )
-                  } else if (Math.abs(d.driftMs) < 120) {
-                    driftNode = (
-                      <span className="text-amber-600 dark:text-amber-400" style={MONO}>
-                        差 {drift} ms
-                      </span>
-                    )
-                  } else {
-                    driftNode = (
-                      <span className="text-destructive" style={MONO}>
-                        差 {drift} ms
-                      </span>
-                    )
-                  }
-                }
-                return (
-                  <li key={d.deviceId} className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                    <span>
-                      {nameOf(d.userId)} · {d.label}
-                    </span>
-                    {isThisLeader && <span className={CHIP_PRIMARY}>指挥</span>}
-                    {isThisSpeaker && <span className={CHIP_PRIMARY}>音箱</span>}
-                    {!isThisSpeaker && d.audible && <span className={CHIP}>耳机</span>}
-                    {d.ready && (
-                      <span className="text-[hsl(var(--primary))]" aria-label="已准备好">
-                        ✓
-                      </span>
-                    )}
-                    {d.latencyMs > 0 && (
-                      <span className={MUTED} style={MONO}>
-                        延迟 {d.latencyMs} ms
-                      </span>
-                    )}
-                    {driftNode}
-                  </li>
-                )
-              })}
-            </ul>
+                  })}
+                </ul>
+              )}
+            </div>
           )}
         </div>
       )}

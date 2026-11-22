@@ -66,7 +66,7 @@ import {
   verifySession,
   type StoredUser,
 } from './users'
-import { BandRegistry, BandsError, parseLimits, type BandMeta } from './bands'
+import { BANDS_DIR, BandRegistry, BandsError, parseLimits, type BandMeta } from './bands'
 import { ArrangementError, ArrangementStore, parseSave as parseSaveArrangement } from './arrangements'
 import {
   BandError,
@@ -80,6 +80,7 @@ import {
   parseUpdateSong,
 } from './band'
 import { RehearsalHub, parseRehearsalBody } from './rehearsal'
+import { SessionLog } from './rehearsalLog'
 import {
   MAX_UPLOAD_BYTES,
   UploadError,
@@ -321,10 +322,28 @@ let practice: PracticeByUser = new Map()
 const practiceQueue = createSerialQueue()
 /** Each band's rehearsal room (also the channel that tells its pages the band changed). */
 const hubs = new Map<string, RehearsalHub>()
+/** 排练记录 of each band (read when first asked for). */
+const sessionLogs = new Map<string, SessionLog>()
+const sessionLogOf = (bandId: string): SessionLog => {
+  let l = sessionLogs.get(bandId)
+  if (!l) {
+    l = new SessionLog(SessionLog.fileOf(path.join(cfg.dataDir, BANDS_DIR), bandId))
+    sessionLogs.set(bandId, l)
+  }
+  return l
+}
 const hubOf = (bandId: string): RehearsalHub => {
   let hub = hubs.get(bandId)
   if (!hub) {
-    hub = new RehearsalHub()
+    // When a rehearsal ends its summary is kept with the songs' titles of that moment.
+    hub = new RehearsalHub((session) => {
+      const store = bands.store(bandId)
+      const songs = session.songs.map((x) => ({ ...x, title: store?.get(x.songId)?.title ?? '（已移除的歌）' }))
+      sessionLogOf(bandId)
+        .add({ ...session, songs })
+        .then(() => bandChanged(bandId))
+        .catch((err) => log(`排练记录没能保存：${errorText(err)}`))
+    })
     hubs.set(bandId, hub)
   }
   return hub
@@ -795,6 +814,7 @@ function currentBand(ctx: BandCtx): BandState {
     { id: ctx.id, leaderId: ctx.meta.leaderId, limits: ctx.meta.limits, storageUsed: storageOf(ctx.id) },
     users.list().filter((u) => memberIds.has(u.id)),
     (path) => progressFor(practice, path),
+    sessionLogOf(ctx.id).sessions(),
   )
 }
 
@@ -1390,6 +1410,8 @@ async function handleAdminBands(
     await invites.forgetBand(id)
     hubs.get(id)?.close()
     hubs.delete(id)
+    await sessionLogOf(id).remove().catch(() => undefined)
+    sessionLogs.delete(id)
     log(`删除乐队：${name}`)
     return sendJson(res, 200, overview())
   }
