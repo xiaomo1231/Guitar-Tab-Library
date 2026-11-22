@@ -22,6 +22,7 @@ import { CommentsPanel } from './CommentsPanel'
 import { FillPanel } from './FillPanel'
 import { LatencyCalibration } from './LatencyCalibration'
 import { addComment, removeComment, setLyrics, updateSong } from '../lib/band'
+import { changedSince } from '../lib/activity'
 import { LyricSheetPanel } from './LyricSheetPanel'
 import { chordsByBar, type ChordScore } from './scoreChords'
 import { openInRehearsal } from '../lib/rehearsalNav'
@@ -133,6 +134,9 @@ interface Props {
 type RehearsalPop = 'fill' | 'comments' | 'calibrate' | null
 
 /** First (MIDI) tick where 1-based `bar` is played, and the tick after it (repeats unrolled). */
+/** With no rehearsal yet, 「上次排练后有 N 处改动」 counts the marks of these last days. */
+const CHANGES_WITHOUT_SESSION_MS = 14 * 24 * 60 * 60 * 1000
+
 function barTicks(a: AlphaTabApi | null, s: model.Score | null, bar: number): [number, number] {
   const look = (
     a?.tickCache as unknown as {
@@ -316,6 +320,15 @@ export function ScoreViewer({
   const [renderVersion, setRenderVersion] = useState(0)
   const [commentsOpen, setCommentsOpen] = useState(false)
   const [focusBar, setFocusBar] = useState<number | null>(null)
+  /** 「这里我改了」 bars since the band's last rehearsal (the last 14 days before the first one). */
+  const [changesSeen, setChangesSeen] = useState(false)
+  const changedBars = bandSong
+    ? changedSince(
+        // Other members' changes: one's own are no news.
+        (bandSong.comments ?? []).filter((c) => c.userId !== me?.id),
+        bandState?.sessions[0]?.endedAt ?? Date.now() - CHANGES_WITHOUT_SESSION_MS,
+      )
+    : []
   // 补位 changes are shared: saved shortly after the last change (sliders send many);
   // until then the draft is what this screen shows and plays.
   const fillTimer = useRef<number | undefined>(undefined)
@@ -1516,9 +1529,40 @@ export function ScoreViewer({
         : loopStatus(prefs.trainer, loopState)
       : null
 
+  /** Moves the sheet (or, leading a rehearsal, everyone's) to the start of the bar. */
+  const jumpToBar = (b: number) => {
+    const tick = barTicks(api.current, score, b)[0]
+    if (leading) void sendRehearsal({ type: 'seek', tick, bar: b }).catch(() => undefined)
+    else if (!following && api.current) api.current.tickPosition = tick
+  }
+
   return (
     <div className="score-bleed">
       <style>{SHEET_CSS}</style>
+      {bandSong && !changesSeen && changedBars.length > 0 && (
+        <div className="gutter mx-auto mb-2 w-full max-w-[1180px]">
+          <Notice tone="muted">
+            上次排练后有 {changedBars.length} 处改动：
+            {changedBars.map((b) => (
+              <button
+                key={b}
+                type="button"
+                className="ml-2 rounded border border-border px-1.5 py-0.5 text-xs hover:border-primary hover:text-primary"
+                onClick={() => jumpToBar(b)}
+              >
+                第 {b} 小节
+              </button>
+            ))}
+            <button
+              type="button"
+              className="ml-3 text-xs underline-offset-4 hover:underline"
+              onClick={() => setChangesSeen(true)}
+            >
+              知道了
+            </button>
+          </Notice>
+        </div>
+      )}
       {bandSong && rehearsalMode && reh.ended && (
         <div className="gutter mx-auto mb-2 w-full max-w-[1180px]">
           <Notice tone="muted">
@@ -1609,7 +1653,10 @@ export function ScoreViewer({
                 void sendRehearsal({ type: 'play', tick, speedPct, bar: b }).catch(() => undefined)
               }}
               onOpenFill={() => setRehPop('fill')}
-              onOpenComments={() => setRehPop('comments')}
+              onOpenComments={() => {
+                setFocusBar(null)
+                setRehPop('comments')
+              }}
               onCalibrate={() => setRehPop('calibrate')}
             />
           </div>
@@ -1626,7 +1673,10 @@ export function ScoreViewer({
           <button
             type="button"
             className="mt-1 text-xs text-muted-foreground underline-offset-4 hover:underline"
-            onClick={() => setCommentsOpen(true)}
+            onClick={() => {
+              setFocusBar(null)
+              setCommentsOpen(true)
+            }}
           >
             小节留言（{bandSong.comments?.length ?? 0}）
           </button>
@@ -1647,12 +1697,10 @@ export function ScoreViewer({
             currentBar={Math.max(1, bar)}
             bars={masterBars.length || 999}
             focusBar={focusBar}
-            onAdd={(b, text) => addComment(bandSong.id, b, text)}
+            onAdd={(b, text, kind) => addComment(bandSong.id, b, text, kind)}
             onRemove={(id) => removeComment(bandSong.id, id)}
             onJump={(b) => {
-              const tick = barTicks(api.current, score, b)[0]
-              if (leading) void sendRehearsal({ type: 'seek', tick, bar: b }).catch(() => undefined)
-              else if (!following && api.current) api.current.tickPosition = tick
+              jumpToBar(b)
               setRehPop(null)
               setCommentsOpen(false)
             }}

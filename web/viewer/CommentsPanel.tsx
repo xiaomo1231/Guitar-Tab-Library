@@ -1,8 +1,10 @@
 /**
- * 小节留言 list grouped by bar, with an add form and delete for the author or an admin.
+ * 小节留言 list grouped by bar, with an add form, one-tap 小节标记 (这里我改了 / 这里有问题 /
+ * 这里注意) and delete for the author or an admin.
  */
 import { useMemo, useState, type FormEvent } from 'react'
-import type { BarComment, UserInfo } from '../lib/api'
+import type { BarComment, MarkKind, UserInfo } from '../lib/api'
+import { MARK_KINDS, MARK_LABEL } from '../lib/activity'
 
 const TEXT_MAX = 200
 
@@ -23,6 +25,21 @@ function fmtWhen(at: number, now: number): string {
   })
 }
 
+const CHIP: Record<MarkKind, string> = {
+  changed: 'border-[hsl(var(--primary))] text-[hsl(var(--primary))]',
+  problem: 'border-amber-500 text-amber-600 dark:text-amber-400',
+  note: 'border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))]',
+}
+
+/** The kind of a 小节标记 as a small chip. */
+export function MarkChip({ kind }: { kind: MarkKind }) {
+  return (
+    <span className={`mr-1.5 inline-block rounded border px-1.5 py-px align-[1px] text-xs ${CHIP[kind]}`}>
+      {MARK_LABEL[kind]}
+    </span>
+  )
+}
+
 const INPUT =
   'rounded-md border border-[hsl(var(--border))] bg-transparent px-2 py-2 text-sm focus:border-[hsl(var(--primary))] focus:outline-none'
 
@@ -36,14 +53,16 @@ export function CommentsPanel(props: {
   bars: number
   /** When set, only this bar's comments are listed first / highlighted. */
   focusBar: number | null
-  onAdd: (bar: number, text: string) => Promise<void>
+  /** `kind` is set for a one-tap 小节标记 (then `text` may be empty). */
+  onAdd: (bar: number, text: string, kind?: MarkKind) => Promise<void>
   onRemove: (id: string) => Promise<void>
   /** Jump the sheet to that bar (optional). */
   onJump?: (bar: number) => void
 }) {
   const { comments, members, me, currentBar, bars, focusBar, onAdd, onRemove, onJump } = props
 
-  const [draftBar, setDraftBar] = useState(String(currentBar))
+  // Opened on a bar (a 留言 badge on the sheet): that bar; else the current bar.
+  const [draftBar, setDraftBar] = useState(String(focusBar ?? currentBar))
   const [draftText, setDraftText] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -104,6 +123,25 @@ export function CommentsPanel(props: {
     }
   }
 
+  /** One tap: a 标记 of that kind on the bar in the form, with the typed words if any. */
+  const handleMark = async (kind: MarkKind) => {
+    const bar = Number(draftBar)
+    if (!Number.isInteger(bar) || bar < 1 || bar > bars) {
+      setError(`小节号需在 1–${bars} 之间`)
+      return
+    }
+    setBusy(true)
+    setError(null)
+    try {
+      await onAdd(bar, draftText.trim(), kind)
+      setDraftText('')
+    } catch (err) {
+      setError(errMessage(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const handleRemove = async (c: BarComment) => {
     if (!window.confirm('删除这条留言？')) return
     setError(null)
@@ -148,7 +186,10 @@ export function CommentsPanel(props: {
                 const canDelete = !!me && (c.userId === me.id || me.role === 'admin')
                 return (
                   <li key={c.id} className="flex flex-col gap-0.5">
-                    <p className="whitespace-pre-wrap break-words">{c.text}</p>
+                    <p className="whitespace-pre-wrap break-words">
+                      {c.kind && <MarkChip kind={c.kind} />}
+                      {c.text}
+                    </p>
                     <div className="flex flex-wrap items-center gap-x-2 text-xs text-[hsl(var(--muted-foreground))]">
                       <span>{nameOf(c.userId)}</span>
                       <span style={{ fontFamily: 'var(--font-mono)' }}>{fmtWhen(c.at, now)}</span>
@@ -194,6 +235,20 @@ export function CommentsPanel(props: {
           >
             {draftText.length}/{TEXT_MAX}
           </span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2" role="group" aria-label="小节标记">
+          {MARK_KINDS.map((kind) => (
+            <button
+              key={kind}
+              type="button"
+              disabled={busy}
+              onClick={() => void handleMark(kind)}
+              className={`min-h-9 rounded-md border px-2.5 text-xs disabled:cursor-not-allowed disabled:opacity-50 ${CHIP[kind]}`}
+            >
+              {MARK_LABEL[kind]}
+            </button>
+          ))}
+          <span className="text-xs text-[hsl(var(--muted-foreground))]">点一下就标在第 {draftBar || '?'} 小节，框里的字会一起带上</span>
         </div>
         <div className="flex items-center gap-2">
           <input

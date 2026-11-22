@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ScoreSearchResult, ScoreVersion } from '@/songs/scoreLibraryTypes'
-import type { RehearsalSession } from '@/songs/scoreServerTypes'
+import type { BandActivity, RehearsalSession } from '@/songs/scoreServerTypes'
 import {
   api,
   errorText,
@@ -31,6 +31,7 @@ import { useRehearsal } from '../lib/rehearsal'
 import { openInRehearsal } from '../lib/rehearsalNav'
 import { canBrowseLibrary, chooseBand, INSTRUMENT_LABELS, useMe } from '../lib/session'
 import { fmtDuration } from '../lib/practice'
+import { activityText, relativeTime } from '../lib/activity'
 import { hrefBandSong, hrefEnsembles, hrefUpload, navigate } from '../lib/route'
 import { FormatBadge, Notice, PageBar, Seg } from '../components/ui'
 import { Link } from '../components/Link'
@@ -448,6 +449,7 @@ export function BandPage() {
 
       <RehearsalSection band={state} meId={me?.id ?? null} manager={manager} />
       <SessionsSection sessions={state.sessions} />
+      <ActivitySection activity={state.activity} songs={state.songs} nameOf={nameOf} />
 
       <MembersSection band={state} meId={me?.id ?? null} manager={manager} daily={daily} />
 
@@ -537,6 +539,64 @@ export function BandPage() {
         <AddSongs inSetlist={new Set(state.songs.map((s) => s.path))} busy={busy} run={run} />
       )}
     </>
+  )
+}
+
+/** How many 动态 rows show before 「看更多」. */
+const ACTIVITY_SHOWN = 8
+
+/** 最近动态: practice, 小节标记 and rehearsals of the band, written by the server (nobody types it). */
+function ActivitySection({
+  activity,
+  songs,
+  nameOf,
+}: {
+  activity: BandActivity[] | undefined
+  songs: BandSong[]
+  nameOf: (id: string) => string
+}) {
+  const [all, setAll] = useState(false)
+  // A server from before the 动态 sends no list.
+  const list = activity ?? []
+  if (list.length === 0) return null
+  const shown = all ? list : list.slice(0, ACTIVITY_SHOWN)
+  const titleOf = (id: string) => songs.find((s) => s.id === id)?.title || '未识别的曲名'
+  const now = Date.now()
+  return (
+    <section aria-labelledby="band-activity" className="max-w-[640px] pt-8">
+      <h2 id="band-activity" className="label m-0">
+        最近动态
+      </h2>
+      <ul className="m-0 flex list-none flex-col gap-2 p-0 pt-3 text-sm">
+        {shown.map((item, i) => {
+          const line = activityText(item, { userName: nameOf, songTitle: titleOf })
+          return (
+            <li key={`${item.type}:${item.at}:${i}`} className="flex flex-wrap items-baseline gap-x-2">
+              {line.songId ? (
+                <Link
+                  href={hrefBandSong(line.songId)}
+                  className="break-words transition-colors hover:text-primary"
+                >
+                  {line.text}
+                </Link>
+              ) : (
+                <span className="break-words">{line.text}</span>
+              )}
+              <span className="text-xs text-muted-foreground">{relativeTime(item.at, now)}</span>
+            </li>
+          )
+        })}
+      </ul>
+      {list.length > ACTIVITY_SHOWN && (
+        <button
+          type="button"
+          className="mt-3 text-sm text-muted-foreground underline underline-offset-4"
+          onClick={() => setAll((v) => !v)}
+        >
+          {all ? '收起' : '看更多'}
+        </button>
+      )}
+    </section>
   )
 }
 

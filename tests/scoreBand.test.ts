@@ -705,6 +705,63 @@ describe('小节留言', () => {
     const store = await BandStore.load(dir, inRoot)
     expect(store.get('old')?.comments ?? []).toEqual([])
   })
+
+  it('parseAddComment accepts each 标记 kind with empty text', () => {
+    for (const kind of ['changed', 'problem', 'note'] as const) {
+      expect(parseAddComment({ songId: 'a', bar: 3, text: '', kind })).toEqual({
+        ok: true,
+        value: { songId: 'a', bar: 3, text: '', kind },
+      })
+      expect(parseAddComment({ songId: 'a', bar: 3, kind })).toEqual({
+        ok: true,
+        value: { songId: 'a', bar: 3, text: '', kind },
+      })
+    }
+    expect(parseAddComment({ songId: 'a', bar: 3, text: ' 改成切分 ', kind: 'changed' })).toEqual({
+      ok: true,
+      value: { songId: 'a', bar: 3, text: '改成切分', kind: 'changed' },
+    })
+  })
+
+  it('parseAddComment rejects an unknown kind, and empty text without a kind', () => {
+    expect(parseAddComment({ songId: 'a', bar: 3, text: 'x', kind: 'praise' }).ok).toBe(false)
+    expect(parseAddComment({ songId: 'a', bar: 3, text: 'x', kind: null }).ok).toBe(false)
+    expect(parseAddComment({ songId: 'a', bar: 3, text: '' }).ok).toBe(false)
+    expect(parseAddComment({ songId: 'a', bar: 3, text: '  ' }).ok).toBe(false)
+    expect(parseAddComment({ songId: 'a', bar: 3, text: '字'.repeat(201), kind: 'note' }).ok).toBe(false)
+  })
+
+  it('addComment stores the kind; a plain comment has none', async () => {
+    const store = await BandStore.load(dir, inRoot)
+    const a = await store.add({ path: 'a.gp5', title: 'A', artist: '' }, 'u1', 1)
+    await store.addComment({ songId: a.id, bar: 4, text: '', kind: 'changed' }, 'u2', 5)
+    const s = await store.addComment({ songId: a.id, bar: 6, text: '慢' }, 'u2', 6)
+    expect(s.comments?.[0]).toMatchObject({ bar: 4, text: '', kind: 'changed', userId: 'u2', at: 5 })
+    expect(s.comments?.[1]).not.toHaveProperty('kind')
+    expect(readFile().songs[0].comments[0].kind).toBe('changed')
+  })
+
+  it('a 标记 with empty text survives a reload; an unknown stored kind is dropped', async () => {
+    const writer = await BandStore.load(dir, inRoot)
+    const a = await writer.add({ path: 'a.gp5', title: 'A', artist: '' }, 'u1', 1)
+    await writer.addComment({ songId: a.id, bar: 2, text: '', kind: 'problem' }, 'u1', 2)
+    await writer.addComment({ songId: a.id, bar: 3, text: '留着', kind: 'note' }, 'u1', 3)
+    const reader = await BandStore.load(dir, inRoot)
+    expect(reader.get(a.id)?.comments).toMatchObject([
+      { bar: 2, text: '', kind: 'problem' },
+      { bar: 3, text: '留着', kind: 'note' },
+    ])
+
+    const file = readFile()
+    file.songs[0].comments[1].kind = 'praise'
+    file.songs[0].comments.push({ id: 'blank', bar: 9, text: '', userId: 'u1', at: 9, kind: 'praise' })
+    fs.writeFileSync(path.join(dir, 'band.json'), JSON.stringify(file))
+    const again = await BandStore.load(dir, inRoot)
+    const kept = again.get(a.id)?.comments ?? []
+    expect(kept).toHaveLength(2)
+    expect(kept[1]).toEqual(expect.objectContaining({ bar: 3, text: '留着' }))
+    expect(kept[1]).not.toHaveProperty('kind')
+  })
 })
 
 describe('今天的排练歌单', () => {

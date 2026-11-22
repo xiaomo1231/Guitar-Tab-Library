@@ -11,6 +11,7 @@ import path from 'node:path'
 import type {
   AddBandSongBody,
   AddCommentBody,
+  BandActivity,
   BandLimits,
   BandSong,
   BandState,
@@ -18,6 +19,7 @@ import type {
   FillConfig,
   FillDrumSource,
   FillMode,
+  MarkKind,
   MemberProgress,
   RehearsalSession,
   SetLyricsBody,
@@ -67,6 +69,9 @@ export class BandError extends Error {
 const isSpeed = (v: unknown): v is number => Number.isInteger(v) && (v as number) >= 15 && (v as number) <= 175
 
 const codePoints = (s: string) => [...s].length
+
+const MARK_KINDS: readonly MarkKind[] = ['changed', 'problem', 'note']
+const isMarkKind = (v: unknown): v is MarkKind => typeof v === 'string' && (MARK_KINDS as readonly string[]).includes(v)
 
 const isStatus = (v: unknown): v is SongStatus => typeof v === 'string' && (STATUSES as readonly string[]).includes(v)
 
@@ -215,9 +220,12 @@ export function parseAddComment(body: Record<string, unknown>): ParseResult<AddC
   if (typeof bar !== 'number' || !Number.isInteger(bar) || bar < 1 || bar > MAX_BAR)
     return { ok: false, error: `小节号要在 1–${MAX_BAR} 之间。` }
   const text = typeof body.text === 'string' ? body.text.trim() : ''
-  if (codePoints(text) < 1 || codePoints(text) > MAX_COMMENT_CHARS)
+  if (body.kind !== undefined && !isMarkKind(body.kind)) return { ok: false, error: '标记的种类不对。' }
+  const kind = body.kind as MarkKind | undefined
+  // A 标记 (这里我改了…) says enough by itself; a plain 留言 needs words.
+  if (codePoints(text) < (kind ? 0 : 1) || codePoints(text) > MAX_COMMENT_CHARS)
     return { ok: false, error: `留言要在 1–${MAX_COMMENT_CHARS} 个字之间。` }
-  return { ok: true, value: { songId, bar, text } }
+  return { ok: true, value: { songId, bar, text, ...(kind ? { kind } : {}) } }
 }
 
 /**
@@ -300,11 +308,13 @@ function sanitizeComments(raw: unknown): BarComment[] {
     if (typeof bar !== 'number' || !Number.isInteger(bar) || bar < 1 || bar > MAX_BAR) continue
     if (typeof text !== 'string') continue
     const trimmed = text.trim()
-    if (codePoints(trimmed) < 1 || codePoints(trimmed) > MAX_COMMENT_CHARS) continue
+    const kind = isMarkKind(rec.kind) ? rec.kind : undefined
+    // A 标记 may come without words; a plain 留言 needs some.
+    if (codePoints(trimmed) < (kind ? 0 : 1) || codePoints(trimmed) > MAX_COMMENT_CHARS) continue
     if (typeof userId !== 'string' || !userId) continue
     if (typeof at !== 'number' || !Number.isFinite(at)) continue
     seen.add(id)
-    out.push({ id, bar, text: trimmed, userId, at })
+    out.push({ id, bar, text: trimmed, userId, at, ...(kind ? { kind } : {}) })
   }
   return out
 }
@@ -528,6 +538,7 @@ export class BandStore {
         text: body.text,
         userId,
         at: now,
+        ...(body.kind ? { kind: body.kind } : {}),
       }
       const updated: BandSong = { ...old, comments: [...comments, comment], updatedAt: now }
       await this.commit(this.list.map((s) => (s.id === old.id ? updated : s)))
@@ -629,6 +640,7 @@ export function bandState(
   members: UserInfo[],
   progress: (path: string) => MemberProgress[],
   sessions: RehearsalSession[] = [],
+  activity: BandActivity[] = [],
 ): BandState {
   const memberIds = new Set(members.map((m) => m.id))
   const songs = store.songs()
@@ -649,5 +661,6 @@ export function bandState(
     progress: progressById,
     // Newest first for the page.
     sessions: [...sessions].reverse(),
+    activity,
   }
 }
