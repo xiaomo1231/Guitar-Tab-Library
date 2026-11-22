@@ -117,11 +117,43 @@ function alphaTabAssets(): Plugin {
   }
 }
 
+const HOME_ICONS = ['apple-touch-icon.png', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png']
+
+/** 添加到主屏幕: the web manifest and the app icons, written next to the built page. */
+function homeScreen(): Plugin {
+  return {
+    name: 'scores-web-home-screen',
+    closeBundle() {
+      const icons = path.join(outDir, 'icons')
+      mkdirSync(icons, { recursive: true })
+      for (const name of HOME_ICONS)
+        copyFileSync(path.join(projectRoot, 'public', 'icons', name), path.join(icons, name))
+      const manifest = {
+        name: '谱库',
+        short_name: '谱库',
+        description: '看谱、练习、乐队排练。',
+        lang: 'zh-CN',
+        start_url: '/',
+        scope: '/',
+        display: 'standalone',
+        background_color: '#0f1114',
+        theme_color: '#0f1114',
+        icons: [
+          { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: '/icons/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+        ],
+      }
+      writeFileSync(path.join(outDir, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n')
+    },
+  }
+}
+
 export default defineConfig({
   root: path.join(projectRoot, 'web'),
   base: '/',
   publicDir: false,
-  plugins: [react(), alphaTabAssets()],
+  plugins: [react(), alphaTabAssets(), homeScreen()],
   resolve: { alias: { '@': path.join(projectRoot, 'src') } },
   css: {
     postcss: {
