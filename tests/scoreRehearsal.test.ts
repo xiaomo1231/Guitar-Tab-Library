@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type {
   RehearsalClock,
   RehearsalCommand,
+  RehearsalSession,
   RehearsalDevice,
   RehearsalLoop,
   RehearsalState,
@@ -199,6 +200,27 @@ describe('parseRehearsalBody', () => {
     expect(parseRehearsalBody(body({ type: 'request', bar: 0, tick: 0 })).ok).toBe(false)
     expect(parseRehearsalBody(body({ type: 'dismiss', requestId: '' })).ok).toBe(false)
     expect(parseRehearsalBody(body({ type: 'dismiss', requestId: 'x'.repeat(21) })).ok).toBe(false)
+  })
+
+  it('accepts a bar on play and seek, and keeps it', () => {
+    expect(parseRehearsalBody(body({ type: 'play', tick: 0, speedPct: 100, bar: 5 }))).toEqual({
+      ok: true,
+      value: { deviceId: 'dev-aaaaaaaa', command: { type: 'play', tick: 0, speedPct: 100, bar: 5 } },
+    })
+    expect(parseRehearsalBody(body({ type: 'seek', tick: 960, bar: 1 }))).toEqual({
+      ok: true,
+      value: { deviceId: 'dev-aaaaaaaa', command: { type: 'seek', tick: 960, bar: 1 } },
+    })
+    // Without a bar the command has no bar key.
+    const plain = parseRehearsalBody(body({ type: 'play', tick: 0, speedPct: 100 }))
+    expect(plain.ok && 'bar' in plain.value.command).toBe(false)
+  })
+
+  it('rejects bar 0 and non-integer bars on play and seek', () => {
+    for (const bar of [0, -1, 2.5, '3', null]) {
+      expect(parseRehearsalBody(body({ type: 'play', tick: 0, speedPct: 100, bar })).ok).toBe(false)
+      expect(parseRehearsalBody(body({ type: 'seek', tick: 0, bar })).ok).toBe(false)
+    }
   })
 })
 
@@ -959,6 +981,93 @@ describe('RehearsalHub', () => {
     const before = a.res.chunks.length
     vi.advanceTimersByTime(HEARTBEAT_MS * 3 + LEADER_GRACE_MS + DEVICE_GRACE_MS)
     expect(a.res.chunks.length).toBe(before)
+  })
+})
+
+describe('RehearsalHub: 排练记录', () => {
+  let hub: RehearsalHub | null = null
+  afterEach(() => {
+    hub?.close()
+    hub = null
+    vi.useRealTimers()
+  })
+
+  /** A hub with A's device connected; the tracker uses Date.now(), so ctx follows the fake clock. */
+  function hubWith(onSession?: (s: RehearsalSession) => void): RehearsalHub {
+    vi.useFakeTimers()
+    vi.setSystemTime(10_000)
+    const h = new RehearsalHub(onSession)
+    const a = fakeStream()
+    h.subscribe('a', A.deviceId, 'iPad', a.req, a.res as never)
+    return h
+  }
+  const now = () => ctx(Date.now())
+
+  it('calls onSession once, when the rehearsal ends, with songs, starts and hot bars', () => {
+    const seen: RehearsalSession[] = []
+    hub = hubWith((s) => seen.push(s))
+    hub.command(A, { type: 'start', setlist: ['s1', 's2'] }, now())
+    hub.command(A, { type: 'play', tick: 0, speedPct: 100, bar: 5 }, now())
+    vi.advanceTimersByTime(START_DELAY_MS + 2000)
+    hub.command(A, { type: 'pause', tick: 100 }, now())
+    vi.advanceTimersByTime(500)
+    hub.command(A, { type: 'play', tick: 0, speedPct: 100, bar: 5 }, now())
+    vi.advanceTimersByTime(START_DELAY_MS + 1000)
+    expect(seen).toEqual([])
+    hub.command(A, { type: 'end' }, now())
+    expect(seen).toEqual([
+      {
+        startedAt: 10_000,
+        endedAt: Date.now(),
+        songs: [{ songId: 's1', title: '', playMs: 3000, starts: 2, hotBars: [{ bar: 5, count: 2 }] }],
+      },
+    ])
+    hub.close()
+    hub = null
+    expect(seen).toHaveLength(1)
+  })
+
+  it('a seek while playing counts as a new start from its bar', () => {
+    const seen: RehearsalSession[] = []
+    hub = hubWith((s) => seen.push(s))
+    hub.command(A, { type: 'start', setlist: ['s1'] }, now())
+    hub.command(A, { type: 'play', tick: 0, speedPct: 100, bar: 1 }, now())
+    vi.advanceTimersByTime(START_DELAY_MS + 100)
+    hub.command(A, { type: 'seek', tick: 960, bar: 9 }, now())
+    vi.advanceTimersByTime(START_DELAY_MS + 100)
+    hub.command(A, { type: 'seek', tick: 960, bar: 9 }, now())
+    vi.advanceTimersByTime(START_DELAY_MS + 100)
+    hub.command(A, { type: 'end' }, now())
+    expect(seen).toHaveLength(1)
+    expect(seen[0].songs).toEqual([
+      { songId: 's1', title: '', playMs: 300, starts: 3, hotBars: [{ bar: 9, count: 2 }] },
+    ])
+  })
+
+  it('is not called for a rehearsal in which nothing was played', () => {
+    const onSession = vi.fn()
+    hub = hubWith(onSession)
+    hub.command(A, { type: 'start', setlist: ['s1'] }, now())
+    vi.advanceTimersByTime(5000)
+    hub.command(A, { type: 'end' }, now())
+    expect(hub.state().active).toBe(false)
+    expect(onSession).not.toHaveBeenCalled()
+  })
+
+  it('a callback that throws does not break the command', () => {
+    const onSession = vi.fn(() => {
+      throw new Error('disk full')
+    })
+    hub = hubWith(onSession)
+    hub.command(A, { type: 'start', setlist: ['s1'] }, now())
+    hub.command(A, { type: 'play', tick: 0, speedPct: 100, bar: 3 }, now())
+    vi.advanceTimersByTime(START_DELAY_MS + 100)
+    const r = hub.command(A, { type: 'end' }, now())
+    expect(onSession).toHaveBeenCalledTimes(1)
+    expect('state' in r && r.state.active).toBe(false)
+    expect(hub.state().active).toBe(false)
+    // The hub keeps working afterwards.
+    expect('state' in hub.command(A, { type: 'start', setlist: ['s1'] }, now())).toBe(true)
   })
 })
 

@@ -409,6 +409,20 @@ describe('bandState', () => {
     await store.setSetlist([a.id])
     expect(bandState(store, META, [], () => []).rehearsalSetlist).toEqual([a.id])
   })
+
+  it('returns the rehearsal sessions newest first, and [] by default', async () => {
+    const store = await BandStore.load(dir, inRoot)
+    expect(bandState(store, META, [], () => []).sessions).toEqual([])
+    const s = (n: number) => ({
+      startedAt: n,
+      endedAt: n + 1,
+      songs: [{ songId: 'x', title: 'X', playMs: 1, starts: 1, hotBars: [] }],
+    })
+    const stored = [s(1), s(2), s(3)]
+    expect(bandState(store, META, [], () => [], stored).sessions.map((x) => x.startedAt)).toEqual([3, 2, 1])
+    // The caller's list is left as it was.
+    expect(stored.map((x) => x.startedAt)).toEqual([1, 2, 3])
+  })
 })
 
 const fullFill = (): FillConfig => ({

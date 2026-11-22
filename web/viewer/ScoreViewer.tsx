@@ -1257,7 +1257,7 @@ export function ScoreViewer({
       void (
         rehState.playing
           ? sendRehearsal({ type: 'pause', tick })
-          : sendRehearsal({ type: 'play', tick, speedPct: live.current.speedPct })
+          : sendRehearsal({ type: 'play', tick, speedPct: live.current.speedPct, bar })
       ).catch(() => undefined)
       return
     }
@@ -1577,11 +1577,12 @@ export function ScoreViewer({
                 void sendRehearsal({
                   type: 'seek',
                   tick: barTicks(api.current, score, b)[0],
+                  bar: b,
                 }).catch(() => undefined)
               }
               onPlayFromBar={(b) => {
                 const tick = barTicks(api.current, score, b)[0]
-                void sendRehearsal({ type: 'play', tick, speedPct }).catch(() => undefined)
+                void sendRehearsal({ type: 'play', tick, speedPct, bar: b }).catch(() => undefined)
               }}
               onOpenFill={() => setRehPop('fill')}
               onOpenComments={() => setRehPop('comments')}
@@ -1626,7 +1627,7 @@ export function ScoreViewer({
             onRemove={(id) => removeComment(bandSong.id, id)}
             onJump={(b) => {
               const tick = barTicks(api.current, score, b)[0]
-              if (leading) void sendRehearsal({ type: 'seek', tick }).catch(() => undefined)
+              if (leading) void sendRehearsal({ type: 'seek', tick, bar: b }).catch(() => undefined)
               else if (!following && api.current) api.current.tickPosition = tick
               setRehPop(null)
               setCommentsOpen(false)
