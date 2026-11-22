@@ -20,12 +20,14 @@ import type {
   FillMode,
   MemberProgress,
   RehearsalSession,
+  SetLyricsBody,
   SongStatus,
   UpdateBandSongBody,
   UserInfo,
 } from '../src/songs/scoreServerTypes'
 import { createSerialQueue, MAX_TEXT_CHARS, textOk, type InRoot, type ParseResult } from './favorites'
 import { writeFileAtomic } from './util'
+import { checkSheetLines, type SheetLine } from '../src/songs/lyricSheet'
 
 export const BAND_FILE = 'band.json'
 export const DEFAULT_BAND_NAME = '我们的乐队'
@@ -269,6 +271,21 @@ function sanitizeParts(raw: unknown): Record<string, string> {
   return out
 }
 
+/** Stored 词谱: kept when well-formed, dropped otherwise (the song itself stays). */
+function sanitizeLyrics(raw: unknown): { lyrics?: SheetLine[] } {
+  const checked = checkSheetLines(raw)
+  return checked.ok && checked.value.length > 0 ? { lyrics: checked.value } : {}
+}
+
+/** Validates the body of POST /api/band/songs/lyrics. */
+export function parseSetLyrics(body: Record<string, unknown>): ParseResult<SetLyricsBody> {
+  const songId = body.songId
+  if (typeof songId !== 'string' || !songId || songId.length > 64) return { ok: false, error: '找不到这首歌。' }
+  const lines = checkSheetLines(body.lines)
+  if (!lines.ok) return lines
+  return { ok: true, value: { songId, lines: lines.value } }
+}
+
 /** Keeps the stored 小节留言 that are well-formed (oldest first, at most MAX_COMMENTS_PER_SONG). */
 function sanitizeComments(raw: unknown): BarComment[] {
   if (!Array.isArray(raw)) return []
@@ -323,6 +340,7 @@ function sanitizeSongs(raw: unknown, inRoot: InRoot): BandSong[] {
       rehearsalSpeedPct: speed === null || isSpeed(speed) ? (speed as number | null) : null,
       ...(fill.ok ? { fill: fill.value } : {}),
       comments: sanitizeComments(rec.comments),
+      ...sanitizeLyrics(rec.lyrics),
       addedBy: typeof rec.addedBy === 'string' ? rec.addedBy : '',
       addedAt,
       updatedAt: num(rec.updatedAt, addedAt),
@@ -478,6 +496,19 @@ export class BandStore {
         fill: body.fill ?? old.fill,
         updatedAt: now,
       }
+      await this.commit(this.list.map((s) => (s.id === old.id ? updated : s)))
+      return updated
+    })
+  }
+
+  /** Replaces a song's 词谱 (an empty list removes it). */
+  setLyrics(body: SetLyricsBody, now: number): Promise<BandSong> {
+    return this.queue(async () => {
+      const old = this.list.find((s) => s.id === body.songId)
+      if (!old) throw new BandError(404, '找不到这首歌。')
+      const { lyrics: _gone, ...rest } = old
+      const updated: BandSong =
+        body.lines.length > 0 ? { ...rest, lyrics: body.lines, updatedAt: now } : { ...rest, updatedAt: now }
       await this.commit(this.list.map((s) => (s.id === old.id ? updated : s)))
       return updated
     })

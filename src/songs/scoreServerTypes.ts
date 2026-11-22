@@ -8,6 +8,8 @@
 // accounts
 // ---------------------------------------------------------------------------
 
+import type { SheetLine } from './lyricSheet'
+
 export type Role = 'admin' | 'member'
 
 export type Instrument = 'guitar' | 'bass' | 'drums' | 'keys' | 'vocal' | 'other'
@@ -108,6 +110,8 @@ export interface BandSong {
   comments?: BarComment[]
   /** 自己上传的谱 of this song (an UploadSong id), or null. Missing on older rows = none. */
   uploadId?: string | null
+  /** 词谱: the lyrics, line by line, each tied to its bar once aligned. Missing = none yet. */
+  lyrics?: SheetLine[]
   addedBy: string
   addedAt: number
   updatedAt: number
@@ -277,6 +281,12 @@ export interface AddCommentBody {
 }
 
 /** One 小节留言 on a band song. */
+/** POST /api/band/songs/lyrics: replaces the song's 词谱 (an empty list removes it). */
+export interface SetLyricsBody {
+  songId: string
+  lines: SheetLine[]
+}
+
 export interface BarComment {
   id: string
   /** 1-based bar number. */
@@ -371,23 +381,6 @@ export interface RehearsalState {
    * player pauses where it is instead of going back to `tick`.
    */
   stalled: boolean
-}
-
-/**
- * The device whose player is the reference of a run: the 音箱, else the conductor's device,
- * else the first device; a device that is away (no open stream) is passed over, so the
- * others keep a reference while it is gone.
- */
-export function referenceDeviceId(state: {
-  speakerDevice: string | null
-  leaderDevice: string | null
-  devices: readonly { deviceId: string; connected: boolean }[]
-}): string | null {
-  const here = (id: string | null) =>
-    id !== null && state.devices.some((d) => d.deviceId === id && d.connected)
-  if (here(state.speakerDevice)) return state.speakerDevice
-  if (here(state.leaderDevice)) return state.leaderDevice
-  return state.devices.find((d) => d.connected)?.deviceId ?? null
 }
 
 /**

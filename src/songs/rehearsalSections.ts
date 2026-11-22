@@ -92,3 +92,20 @@ export function barEndTick(
   const next = bars[bar]
   return next ? next.start : songEndTick
 }
+
+/**
+ * The device whose player is the reference of a run: the 音箱, else the conductor's device,
+ * else the first device; a device that is away (no open stream) is passed over, so the
+ * others keep a reference while it is gone.
+ */
+export function referenceDeviceId(state: {
+  speakerDevice: string | null
+  leaderDevice: string | null
+  devices: readonly { deviceId: string; connected: boolean }[]
+}): string | null {
+  const here = (id: string | null) =>
+    id !== null && state.devices.some((d) => d.deviceId === id && d.connected)
+  if (here(state.speakerDevice)) return state.speakerDevice
+  if (here(state.leaderDevice)) return state.leaderDevice
+  return state.devices.find((d) => d.connected)?.deviceId ?? null
+}

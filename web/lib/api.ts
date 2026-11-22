@@ -21,6 +21,7 @@ import type {
   UploadFileQuery,
   UploadSong,
   AddCommentBody,
+  SetLyricsBody,
   InviteCheck,
   InviteInfo,
   NewInviteBody,
@@ -334,6 +335,7 @@ export const api = {
       { signal },
     ),
   addComment: (b: AddCommentBody) => call<BandState>('/api/band/comments/add', { body: b }),
+  setLyrics: (b: SetLyricsBody) => call<BandState>('/api/band/songs/lyrics', { body: b }),
   removeComment: (songId: string, commentId: string) =>
     call<BandState>('/api/band/comments/remove', { body: { songId, commentId } }),
   setRehearsalSetlist: (ids: string[]) => call<BandState>('/api/band/setlist', { body: { ids } }),

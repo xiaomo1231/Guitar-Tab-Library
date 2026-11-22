@@ -16,7 +16,7 @@ import type {
   RehearsalState,
   RehearsalSession,
 } from '../src/songs/scoreServerTypes'
-import { referenceDeviceId } from '../src/songs/scoreServerTypes'
+import { referenceDeviceId } from '../src/songs/rehearsalSections'
 import type { ParseResult } from './favorites'
 import { SessionTracker } from './rehearsalLog'
 

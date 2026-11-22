@@ -13,6 +13,7 @@ import {
   type UpdateBandSongBody,
 } from './api'
 import { ApiError } from './api'
+import type { SheetLine } from '@/songs/lyricSheet'
 import { getBandId, onBandChange, setMe } from './session'
 
 export const STATUS_LABELS: Record<SongStatus, string> = {
@@ -145,5 +146,6 @@ export const setLeader = async (userId: string) => {
 export const setSetlist = (ids: string[]) => commit(api.setRehearsalSetlist(ids))
 export const addComment = (songId: string, bar: number, text: string) =>
   commit(api.addComment({ songId, bar, text }))
+export const setLyrics = (songId: string, lines: SheetLine[]) => commit(api.setLyrics({ songId, lines }))
 export const removeComment = (songId: string, commentId: string) =>
   commit(api.removeComment(songId, commentId))
